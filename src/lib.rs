@@ -110,6 +110,18 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         pressure
     }
 
+    /// Reads and returns pressure and resets con
+    pub fn pressure_one_shot(&mut self) -> f64 {
+        let pressure = self.pressure();
+        self.set_control(Control {
+            osrs_t: Oversampling::x1,
+            osrs_p: Oversampling::x1,
+            mode: PowerMode::Forced,
+        });
+
+        pressure
+    }
+
     /// Reads and returns temperature
     pub fn temp(&mut self) -> f64 {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
