@@ -7,7 +7,7 @@ keywords = ["embedded-hal-driver", "accelerometer", "compass", "MEMS"]
 license = "MIT"
 name = "bmp280-ehal"
 repository = "https://github.com/copterust/bmp280"
-version = "0.0.3-alpha.0"
+version = "0.0.3"
 
 [dependencies]
 embedded-hal = "0.2.1"
