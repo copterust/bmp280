@@ -114,8 +114,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
     pub fn pressure_one_shot(&mut self) -> f64 {
         let pressure = self.pressure();
         self.set_control(Control {
-            osrs_t: Oversampling::x1,
-            osrs_p: Oversampling::x1,
+            osrs_t: Oversampling::x2,
+            osrs_p: Oversampling::x16,
             mode: PowerMode::Forced,
         });
 
