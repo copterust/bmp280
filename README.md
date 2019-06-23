@@ -14,7 +14,7 @@
 ## Basic usage
 
 Include [library](https://crates.io/crates/bmp280) as a dependency in your Cargo.toml
-[![crates.io](http://meritbadge.herokuapp.com/bmp280?style=flat-square)](https://crates.io/crates/bmp280):
+[![crates.io](http://meritbadge.herokuapp.com/bmp388)](https://crates.io/crates/bmp388):
 
 ```
 [dependencies.bmp388]
@@ -41,7 +41,7 @@ API Docs available on [docs.rs](https://docs.rs/bmp388).
 
 * Implement FiFo Buffer support
 
-#Origin
+## Origin
 
 Based on the [bmp280 crate](https://github.com/copterust/bmp280) by Roma Sokolov and Alexander Zhuravlev.
 
