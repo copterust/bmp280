@@ -35,7 +35,7 @@ println!("{:?}", pres);
 
 ## Documentation
 
-API Docs available on [docs.rs](todo).
+API Docs available on [docs.rs](https://docs.rs/bmp388).
 
 ## ToDo:
 

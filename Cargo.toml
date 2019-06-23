@@ -2,7 +2,7 @@
 authors = ["Stefan Rakel", "Roma Sokolov", "Alexander Zhuravlev"]
 categories = ["embedded", "hardware-support", "no-std"]
 description = "A platform agnostic driver to interface with the BMP388 pressure sensor"
-documentation = "https://docs.rs/bmp280"
+documentation = "https://docs.rs/bmp388"
 keywords = ["embedded-hal-driver", "pressure"]
 license = "MIT"
 name = "bmp388"
