@@ -1,4 +1,4 @@
-//! A platform agnostic driver to interface with the BMP280 (pressure sensor)
+//! A platform agnostic driver to interface with the BMP388 (pressure sensor)
 //!
 //! This driver is built using [`embedded-hal`] traits.
 
@@ -8,42 +8,40 @@
 
 extern crate embedded_hal as ehal;
 
-use core::fmt;
-
 const ADDRESS: u8 = 0x76;
 
-/// BMP280 driver
-pub struct BMP280<I2C: ehal::blocking::i2c::WriteRead> {
+/// BMP388 driver
+pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     com: I2C,
     // Temperature compensation
     dig_t1: u16,
-    dig_t2: i16,
-    dig_t3: i16,
-    t_fine: i32,
+    dig_t2: u16,
+    dig_t3: i8,
     // Pressure calibration
-    dig_p1: u16,
+    dig_p1: i16,
     dig_p2: i16,
-    dig_p3: i16,
-    dig_p4: i16,
-    dig_p5: i16,
-    dig_p6: i16,
-    dig_p7: i16,
-    dig_p8: i16,
+    dig_p3: i8,
+    dig_p4: i8,
+    dig_p5: u16,
+    dig_p6: u16,
+    dig_p7: i8,
+    dig_p8: i8,
     dig_p9: i16,
+    dig_p10: i8,
+    dig_p11: i8,
 }
 
-impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
-    /// Creates new BMP280 driver
-    pub fn new<E>(i2c: I2C) -> Result<BMP280<I2C>, E>
+impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
+    /// Creates new BMP388 driver
+    pub fn new<E>(i2c: I2C) -> Result<BMP388<I2C>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
-        let mut chip = BMP280 {
+        let mut chip = BMP388 {
             com: i2c,
             dig_t1: 0,
             dig_t2: 0,
             dig_t3: 0,
-            t_fine: 0,
             dig_p1: 0,
             dig_p2: 0,
             dig_p3: 0,
@@ -53,9 +51,11 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
             dig_p7: 0,
             dig_p8: 0,
             dig_p9: 0,
+            dig_p10: 0,
+            dig_p11: 0,
         };
 
-        if chip.id() == 0x58 {
+        if chip.id() == 0x50 {
             chip.read_calibration();
         }
 
@@ -63,166 +63,241 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
     }
 }
 
-impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
+impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     fn read_calibration(&mut self) {
-        let mut data: [u8; 24] = [0; 24];
+        let mut data: [u8; 21] = [0; 21];
         let _ = self
             .com
             .write_read(ADDRESS, &[Register::calib00 as u8], &mut data);
 
-        self.dig_t1 = ((data[1] as u16) << 8) | (data[0] as u16);
-        self.dig_t2 = ((data[3] as i16) << 8) | (data[2] as i16);
-        self.dig_t3 = ((data[5] as i16) << 8) | (data[4] as i16);
+        self.dig_t1 = (data[0] as u16) | ((data[1] as u16) << 8);
+        self.dig_t2 = (data[2] as u16) | ((data[3] as u16) << 8);
+        self.dig_t3 = data[4] as i8;
 
-        self.dig_p1 = ((data[7] as u16) << 8) | (data[6] as u16);
-        self.dig_p2 = ((data[9] as i16) << 8) | (data[8] as i16);
-        self.dig_p3 = ((data[11] as i16) << 8) | (data[10] as i16);
-        self.dig_p4 = ((data[13] as i16) << 8) | (data[12] as i16);
-        self.dig_p5 = ((data[15] as i16) << 8) | (data[14] as i16);
-        self.dig_p6 = ((data[17] as i16) << 8) | (data[16] as i16);
-        self.dig_p7 = ((data[19] as i16) << 8) | (data[18] as i16);
-        self.dig_p8 = ((data[21] as i16) << 8) | (data[20] as i16);
-        self.dig_p9 = ((data[23] as i16) << 8) | (data[22] as i16);
+        self.dig_p1 = (data[5] as i16) | ((data[6] as i16) << 8);
+        self.dig_p2 = (data[7] as i16) | ((data[8] as i16) << 8);
+        self.dig_p3 = data[9] as i8;
+        self.dig_p4 = data[10] as i8;
+        self.dig_p5 = (data[11] as u16) | ((data[12] as u16) << 8);
+        self.dig_p6 = (data[13] as u16) | ((data[14] as u16) << 8);
+        self.dig_p7 = data[15] as i8;
+        self.dig_p8 = data[16] as i8;
+        self.dig_p9 = (data[17] as i16) | ((data[18] as i16) << 8);
+        self.dig_p10 = data[19] as i8;
+        self.dig_p11 = data[20] as i8;
     }
 
-    /// Reads and returns pressure
-    pub fn pressure(&mut self) -> f64 {
+    /// Reads and returns sensor values
+    pub fn sensor_values(&mut self) -> SensorData {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
         let _ = self
             .com
-            .write_read(ADDRESS, &[Register::press as u8], &mut data);
-        let press = (data[0] as u32) << 12 | (data[1] as u32) << 4 | (data[2] as u32) >> 4;
+            .write_read(ADDRESS, &[Register::sensor_data as u8], &mut data);
+        let uncompensated_press = (data[0] as u32) | (data[1] as u32) << 8 | (data[2] as u32) << 16;
+        let uncompensated_temp = (data[3] as u32) | (data[4] as u32) << 8 | (data[5] as u32) << 16;
 
-        let mut var1 = ((self.t_fine as f64) / 2.0) - 64000.0;
-        let mut var2 = var1 * var1 * (self.dig_p6 as f64) / 32768.0;
-        var2 = var2 + var1 * (self.dig_p5 as f64) * 2.0;
-        var2 = (var2 / 4.0) + ((self.dig_p4 as f64) * 65536.0);
-        var1 = ((self.dig_p3 as f64) * var1 * var1 / 524288.0 + (self.dig_p2 as f64) * var1)
-            / 524288.0;
-        var1 = (1.0 + var1 / 32768.0) * (self.dig_p1 as f64);
-        let mut pressure = 1048576.0 - (press as f64);
-        if var1 != 0.0 {
-            pressure = (pressure - (var2 / 4096.0)) * 6250.0 / var1;
-            var1 = (self.dig_p9 as f64) * pressure * pressure / 2147483648.0;
-            var2 = pressure * (self.dig_p8 as f64) / 32768.0;
-            pressure = pressure + (var1 + var2 + (self.dig_p7 as f64)) / 16.0;
+        let temp = self.compensate_temp(uncompensated_temp);
+        let press = self.compensate_pressure(uncompensated_press, temp);
+
+        SensorData {
+            pressure: press,
+            temperature: temp,
         }
-        pressure
+
     }
 
-    /// Reads and returns pressure and resets con
-    pub fn pressure_one_shot(&mut self) -> f64 {
-        let pressure = self.pressure();
-        self.set_control(Control {
-            osrs_t: Oversampling::x2,
-            osrs_p: Oversampling::x16,
-            mode: PowerMode::Forced,
-        });
+    /// Compensates a pressure value
+    fn compensate_pressure(&mut self, uncompensated: u32, compensated_temp: f64) -> f64 {
+        let uncompensated = uncompensated as f64;
+        let p1 = (self.dig_p1 as f64) / 1048576.0; //2^20
+        let p2 = (self.dig_p2 as f64) / 536870912.0; //2^29
+        let p3 = (self.dig_p3 as f64) / 4294967296.0; //2^32
+        let p4 = (self.dig_p4 as f64) / 137438953472.0; //2^37
+        let p5 = (self.dig_p5 as f64) / 0.125; //2^-3
+        let p6 = (self.dig_p6 as f64) / 64.0; //2^6
+        let p7 = (self.dig_p7 as f64) / 256.0; //2^8
+        let p8 = (self.dig_p8 as f64) / 32768.0; //2^15
+        let p9 = (self.dig_p9 as f64) / 281474976710656.0; //2^48
+        let p10 = (self.dig_p10 as f64) / 281474976710656.0; //2^48
+        let p11 = (self.dig_p11 as f64) / 36893488147419103232.0; //2^65
 
-        pressure
+        let mut partial_data1 = p6 * compensated_temp;
+        let mut partial_data2 = p7 * (compensated_temp * compensated_temp);
+        let mut partial_data3 = p8 * (compensated_temp * compensated_temp * compensated_temp);
+        let partial_out1 = p5 + partial_data1 + partial_data2 + partial_data3;
+
+        partial_data1 = p2 * compensated_temp;
+        partial_data2 = p3 * (compensated_temp * compensated_temp);
+        partial_data3 = p4 * (compensated_temp * compensated_temp * compensated_temp);
+        let partial_out2 = uncompensated * (p1 + partial_data1 + partial_data2 + partial_data3);
+
+        partial_data1 = uncompensated * uncompensated;
+        partial_data2 = p9 + p10 * compensated_temp;
+        partial_data3 = partial_data1 * partial_data2;
+        let partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * p11;
+
+        let compensated_press = partial_out1 + partial_out2 + partial_data4;
+
+        compensated_press
+        
     }
 
-    /// Reads and returns temperature
-    pub fn temp(&mut self) -> f64 {
-        let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
-        let _ = self
-            .com
-            .write_read(ADDRESS, &[Register::press as u8], &mut data);
-        let _pres = (data[0] as u32) << 12 | (data[1] as u32) << 4 | (data[2] as u32) >> 4;
-        let temp = (data[3] as u32) << 12 | (data[4] as u32) << 4 | (data[5] as u32) >> 4;
+    /// Compensates a temperature value
+    fn compensate_temp(&mut self, uncompensated : u32) -> f64 {
+        let partial_data1 : f64;
+        let partial_data2 : f64;
 
-        let v1 = ((temp as f64) / 16384.0 - (self.dig_t1 as f64) / 1024.0) * (self.dig_t2 as f64);
-        let v2 = (((temp as f64) / 131072.0 - (self.dig_t1 as f64) / 8192.0)
-            * ((temp as f64) / 131072.0 - (self.dig_t1 as f64) / 8192.0))
-            * (self.dig_t3 as f64);
-        self.t_fine = (v1 + v2) as i32;
+        let t1 = (self.dig_t1 as f64) / 0.00390625; //2^-8
+        let t2 = (self.dig_t2 as f64) / 1073741824.0; //2^30
+        let t3 = (self.dig_t3 as f64) / 281474976710656.0; //2^48
 
-        ((v1 + v2) / 5120.0)
+        partial_data1 = (uncompensated as f64) - t1;
+        partial_data2 = partial_data1 * t2;
+
+        let compensated = partial_data2 + (partial_data1 * partial_data1) * t3; 
+
+        return compensated;
     }
 
-    /// Returns current config
-    pub fn config(&mut self) -> Config {
-        let config = self.read_byte(Register::config);
-        let t_sb = match (config & (0b111 << 5)) >> 5 {
-            x if x == Standby::ms0_5 as u8 => Standby::ms0_5,
-            x if x == Standby::ms62_5 as u8 => Standby::ms62_5,
-            x if x == Standby::ms125 as u8 => Standby::ms125,
-            x if x == Standby::ms250 as u8 => Standby::ms250,
-            x if x == Standby::ms500 as u8 => Standby::ms500,
-            x if x == Standby::ms1000 as u8 => Standby::ms1000,
-            x if x == Standby::ms2000 as u8 => Standby::ms2000,
-            x if x == Standby::ms4000 as u8 => Standby::ms4000,
-            _ => Standby::unknown,
-        };
-        let filter = match (config & (0b111 << 2)) >> 2 {
-            x if x == Filter::off as u8 => Filter::off,
-            x if x == Filter::c2 as u8 => Filter::c2,
-            x if x == Filter::c4 as u8 => Filter::c4,
-            x if x == Filter::c8 as u8 => Filter::c8,
-            x if x == Filter::c16 as u8 => Filter::c16,
-            _ => Filter::unknown,
-        };
-        Config {
-            t_sb: t_sb,
-            filter: filter,
-        }
+    /// Sets power settings
+    pub fn set_power_control(&mut self, new: PowerControl) {
+        let mode = (new.mode as u8) << 4;
+        let temp_en = (new.temperature_enable as u8) << 1;
+        let press_en = new.pressure_enable as u8;
+        self.write_byte(Register::pwr_ctrl, mode | temp_en | press_en);
     }
 
-    /// Sets configuration
-    pub fn set_config(&mut self, new: Config) {
-        let config: u8 = 0x00;
-        let t_sb = (new.t_sb as u8) << 5;
-        let filter = (new.filter as u8) << 2;
-        self.write_byte(Register::config, config | t_sb | filter);
-    }
-
-    /// Sets control
-    pub fn set_control(&mut self, new: Control) {
-        let osrs_t: u8 = (new.osrs_t as u8) << 5;
-        let osrs_p: u8 = (new.osrs_p as u8) << 2;
-        let control: u8 = osrs_t | osrs_p | (new.mode as u8);
-        self.write_byte(Register::ctrl_meas, control);
-    }
-
-    /// Returns control
-    pub fn control(&mut self) -> Control {
-        let config = self.read_byte(Register::ctrl_meas);
-        let osrs_t = match (config & (0b111 << 5)) >> 5 {
-            x if x == Oversampling::skipped as u8 => Oversampling::skipped,
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            _ => Oversampling::x16,
-        };
-        let osrs_p = match (config & (0b111 << 2)) >> 2 {
-            x if x == Oversampling::skipped as u8 => Oversampling::skipped,
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            _ => Oversampling::x16,
-        };
-        let mode = match config & 0b11 {
+    /// Gets power settings
+    pub fn power_control(&mut self) -> PowerControl {
+        let value = self.read_byte(Register::pwr_ctrl);
+        let press_en = (value & 0b1) != 0;
+        let temp_en = (value & 0b10) != 0;
+        let mode = match value & (0b11 << 4) >> 4 {
             x if x == PowerMode::Sleep as u8 => PowerMode::Sleep,
-            x if x == PowerMode::Forced as u8 => PowerMode::Forced,
             x if x == PowerMode::Normal as u8 => PowerMode::Normal,
             _ => PowerMode::Forced,
         };
-
-        Control {
-            osrs_t: osrs_t,
-            osrs_p: osrs_p,
-            mode: mode,
+        PowerControl{
+            pressure_enable: press_en,
+            temperature_enable: temp_en,
+            mode: mode
         }
     }
 
-    /// Returns device status
-    pub fn status(&mut self) -> Status {
-        let status = self.read_byte(Register::status);
-        Status {
-            measuring: (1 == status & 0b00001000),
-            im_update: (1 == status & 0b00000001),
+
+    ///Sets sampling rate
+    pub fn set_sampling_rate(&mut self, new: SamplingRate) {
+        let sampling_rate = new as u8;
+        self.write_byte(Register::odr, sampling_rate);
+    }
+
+    /// Returns current sampling rate
+    pub fn sampling_rate(&mut self) -> SamplingRate {
+        let value = self.read_byte(Register::odr);
+        match value {
+            x if x == SamplingRate::odr_1 as u8 => SamplingRate::odr_1,
+            x if x == SamplingRate::odr_2 as u8 => SamplingRate::odr_2,
+            x if x == SamplingRate::odr_4 as u8 => SamplingRate::odr_4,
+            x if x == SamplingRate::odr_8 as u8 => SamplingRate::odr_8,
+            x if x == SamplingRate::odr_16 as u8 => SamplingRate::odr_16,
+            x if x == SamplingRate::odr_32 as u8 => SamplingRate::odr_32,
+            x if x == SamplingRate::odr_64 as u8 => SamplingRate::odr_64,
+            x if x == SamplingRate::odr_128 as u8 => SamplingRate::odr_128,
+            x if x == SamplingRate::odr_256 as u8 => SamplingRate::odr_256,
+            x if x == SamplingRate::odr_512 as u8 => SamplingRate::odr_512,
+            x if x == SamplingRate::odr_1024 as u8 => SamplingRate::odr_1024,
+            x if x == SamplingRate::odr_2048 as u8 => SamplingRate::odr_2048,
+            x if x == SamplingRate::odr_4096 as u8 => SamplingRate::odr_4096,
+            x if x == SamplingRate::odr_8192 as u8 => SamplingRate::odr_8192,
+            x if x == SamplingRate::odr_16384 as u8 => SamplingRate::odr_16384,
+            x if x == SamplingRate::odr_32768 as u8 => SamplingRate::odr_32768,
+            x if x == SamplingRate::odr_65536 as u8 => SamplingRate::odr_65536,
+            _ => SamplingRate::odr_131072,
+        }
+
+
+    }
+
+    /// Returns current filter
+    pub fn filter(&mut self) -> Filter {
+        let config = self.read_byte(Register::config);
+        let filter = match config {
+            x if x == Filter::c0 as u8 => Filter::c0,
+            x if x == Filter::c1 as u8 => Filter::c1,
+            x if x == Filter::c3 as u8 => Filter::c3,
+            x if x == Filter::c7 as u8 => Filter::c7,
+            x if x == Filter::c15 as u8 => Filter::c15,
+            x if x == Filter::c31 as u8 => Filter::c31,
+            x if x == Filter::c63 as u8 => Filter::c63,
+            _ => Filter::c127,
+        };
+        filter
+    }
+
+    /// Sets filter
+    pub fn set_filter(&mut self, new: Filter) {
+        let filter = new as u8;
+        self.write_byte(Register::config, filter);
+    }
+
+    /// Sets oversampling configuration
+    pub fn set_oversampling(&mut self, new: OversamplingConfig) {
+        let osr_t: u8 = (new.osr4_t as u8) << 3;
+        let osr_p: u8 = new.osr_p as u8;
+        let osr: u8 = osr_t | osr_p;
+        self.write_byte(Register::osr, osr);
+    }
+
+    /// Get oversampling configuration
+    pub fn oversampling(&mut self) -> OversamplingConfig {
+        let value = self.read_byte(Register::osr);
+        let osr4_t = match (value & (0b111 << 3)) >> 3 {
+            x if x == Oversampling::x1 as u8 => Oversampling::x1,
+            x if x == Oversampling::x2 as u8 => Oversampling::x2,
+            x if x == Oversampling::x4 as u8 => Oversampling::x4,
+            x if x == Oversampling::x8 as u8 => Oversampling::x8,
+            x if x == Oversampling::x16 as u8 => Oversampling::x16,
+            _ => Oversampling::x32,
+        };
+        let osr_p = match value & 0b111 {
+            x if x == Oversampling::x1 as u8 => Oversampling::x1,
+            x if x == Oversampling::x2 as u8 => Oversampling::x2,
+            x if x == Oversampling::x4 as u8 => Oversampling::x4,
+            x if x == Oversampling::x8 as u8 => Oversampling::x8,
+            x if x == Oversampling::x16 as u8 => Oversampling::x16,
+            _ => Oversampling::x32,
+        };
+        OversamplingConfig {
+            osr_p: osr_p,
+            osr4_t: osr4_t,
+        }
+    }
+
+    /// Sets interrupt configuration
+    pub fn set_interrupt_config(&mut self, new: InterruptConfig) {
+        let mode = new.output as u8;
+        let level = (new.active_high as u8) << 1;
+        let latch = (new.latch as u8) << 2;
+        let data_ready = (new.data_ready_interrupt_enable as u8) << 6;
+        self.write_byte(Register::int_ctrl, mode | level | latch | data_ready);
+    }
+
+    /// Returns current interrupt configuration
+    pub fn interrupt_config(&mut self) -> InterruptConfig {
+        let value = self.read_byte(Register::int_ctrl);
+        let mode = match value & 0b1 {
+            0 => OutputMode::PushPull,
+            _ => OutputMode::OpenDrain,
+        };
+        let level = value & (1 << 1) != 0;
+        let latch = value & (1 << 2) != 0;
+        let data_ready = value & (1 << 6) != 0;
+
+        InterruptConfig {
+            output: mode,
+            active_high: level,
+            latch: latch,
+            data_ready_interrupt_enable: data_ready,
         }
     }
 
@@ -233,7 +308,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
 
     /// Software reset, emulates POR
     pub fn reset(&mut self) {
-        self.write_byte(Register::reset, 0xB6); // Magic from documentation
+        self.write_byte(Register::cmd, 0xB6); // Magic from documentation
     }
 
     fn write_byte(&mut self, reg: Register, byte: u8) {
@@ -250,107 +325,136 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
     }
 }
 
+/// Interrupt configuration
+pub struct InterruptConfig {
+    ///Output mode of interrupt pin
+    pub output: OutputMode,
+    ///Level of interrupt pin
+    pub active_high: bool,
+    ///Latching for interrupt
+    pub latch: bool,
+    ///Data ready interrupt
+    pub data_ready_interrupt_enable: bool,
+
+}
+
+///Output mode for interrupt pin
+pub enum OutputMode {
+    ///Push-pull output mode
+    PushPull = 0,
+    ///Open-drain output mode
+    OpenDrain = 1,
+}
+
 #[derive(Debug, Copy, Clone)]
-/// Control
-pub struct Control {
-    /// Temperature oversampling
-    pub osrs_t: Oversampling,
-    /// Pressure oversampling
-    pub osrs_p: Oversampling,
+///Sensor data
+pub struct SensorData {
+    ///The measured pressure
+    pub pressure : f64,
+    /// The emasured temperature
+    pub temperature : f64,
+}
+
+#[derive(Debug, Copy, Clone)]
+/// Powercontrol
+pub struct PowerControl {
+    ///Pressuresensor enable
+    pub pressure_enable : bool,
+    ///Temperatursensor enable
+    pub temperature_enable : bool,
     /// Powermode
     pub mode: PowerMode,
 }
 
 #[derive(Debug, Copy, Clone)]
+///Oversampling Config (OSR)
+pub struct OversamplingConfig {
+    ///Pressure oversampling
+    pub osr_p: Oversampling,
+    ///Temperature oversampling
+    pub osr4_t: Oversampling,
+}
+
+#[derive(Debug, Copy, Clone)]
 #[allow(non_camel_case_types)]
 /// Standby time in ms
-pub enum Standby {
-    /// ms0_5
-    ms0_5 = 0b000,
-    /// ms62_5
-    ms62_5 = 0b001,
-    /// ms125_5
-    ms125 = 0b010,
-    /// ms250
-    ms250 = 0b011,
-    /// ms500
-    ms500 = 0b100,
-    /// ms1000
-    ms1000 = 0b101,
-    /// ms2000
-    ms2000 = 0b110,
-    /// ms4000
-    ms4000 = 0b111,
-    /// unknown
-    unknown,
+pub enum SamplingRate {
+    ///Prescaler 1 (5ms)
+    odr_1 = 0x00,
+    ///Prescaler 2 (10ms)
+    odr_2 = 0x01,
+    ///Prescaler 4 (20ms)
+    odr_4 = 0x02,
+    ///Prescaler 8 (40ms)
+    odr_8 = 0x03,
+    ///Prescaler 16 (80ms)
+    odr_16 = 0x04,
+    ///Prescaler 32 (160ms)
+    odr_32 = 0x05,
+    ///Prescaler 64 (320ms)
+    odr_64 = 0x06,
+    ///Prescaler 128 (640ms)
+    odr_128 = 0x07,
+    ///Prescaler 256 (1.280s)
+    odr_256 = 0x08,
+    ///Prescaler 512 (2.560s)
+    odr_512 = 0x09,
+    ///Prescaler 1024 (5.120s)
+    odr_1024 = 0x0A,
+    ///Prescaler 2048 (10.24s)
+    odr_2048 = 0x0B,
+    ///Prescaler 4096 (20.48s)
+    odr_4096 = 0x0C,
+    ///Prescaler 8192 (40.96s)
+    odr_8192 = 0x0D,
+    ///Prescaler 16384 (81.92s)
+    odr_16384 = 0x0E,
+    ///Prescaler 32768 (163.84s)
+    odr_32768 = 0x0F,
+    ///Prescaler 65536 (327.68s)
+    odr_65536 = 0x10,
+    ///Prescaler 131072 (655.36s)
+    odr_131072 = 0x11,
 }
 
 #[derive(Debug, Copy, Clone)]
 #[allow(non_camel_case_types)]
 /// The time constant of IIR filter
 pub enum Filter {
-    /// off
-    off = 0x00,
-    /// c2
-    c2 = 0x01,
-    /// c4
-    c4 = 0x02,
-    /// c8
-    c8 = 0x03,
-    /// c16
-    c16 = 0x04,
-    /// unknown
-    unknown,
-}
-
-/// Configuration register, sets the rate, filter and interface options
-/// of the device. Note that writing to this register while device in normal
-/// mode may be ignored. Writes in sleep mode are not ignored.
-///
-/// spi3w_en is intentionally left out of this implementation.
-#[derive(Debug, Copy, Clone)]
-pub struct Config {
-    /// Controls inactive duration in normal mode
-    pub t_sb: Standby,
-    /// Controls the time constant of IIR filter
-    pub filter: Filter,
-}
-
-/// Status
-#[derive(Debug, Copy, Clone)]
-pub struct Status {
-    /// measuring
-    measuring: bool,
-    /// im update
-    im_update: bool,
-}
-
-impl fmt::Display for Status {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "conversion is running: {}, NVM data being copied: {}",
-            self.measuring, self.im_update
-        )
-    }
+    ///off
+    c0 = 0b000,
+    ///Coefficient 1
+    c1 = 0b001,
+    ///Coefficient 3
+    c3 = 0b010,
+    ///Coefficient 7
+    c7 = 0b011,
+    ///Coefficient 15
+    c15 = 0b100,
+    ///Coefficient 31
+    c31 = 0b101,
+    ///Coefficient 63
+    c63 = 0b110,
+    ///Coefficient 127
+    c127 = 0b111,
 }
 
 #[derive(Debug, Copy, Clone)]
 #[allow(non_camel_case_types)]
 /// Oversampling
 pub enum Oversampling {
-    /// skipped
-    skipped = 0b000,
     /// x1
-    x1 = 0b001,
+    x1 = 0b000,
     /// x2
-    x2 = 0b010,
+    x2 = 0b001,
     /// x4
-    x4 = 0b011,
+    x4 = 0b010,
     /// x8
-    x8 = 0b100,
+    x8 = 0b011,
     /// x16
-    x16 = 0b101,
+    x16 = 0b100,
+    /// x32
+    x32 = 0b101,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -366,11 +470,13 @@ pub enum PowerMode {
 
 #[allow(non_camel_case_types)]
 enum Register {
-    id = 0xD0,
-    reset = 0xE0,
-    status = 0xF3,
-    ctrl_meas = 0xF4,
-    config = 0xF5,
-    press = 0xF7,
-    calib00 = 0x88,
+    id = 0x00,
+    sensor_data = 0x04,
+    config = 0x1F,
+    odr = 0x1D,
+    osr = 0x1C,
+    pwr_ctrl = 0x1B,
+    int_ctrl = 0x19,
+    calib00 = 0x31,
+    cmd = 0x7E,
 }

@@ -1,13 +1,13 @@
 [package]
-authors = ["Roma Sokolov", "Alexander Zhuravlev"]
+authors = ["Stefan Rakel", "Roma Sokolov", "Alexander Zhuravlev"]
 categories = ["embedded", "hardware-support", "no-std"]
-description = "A platform agnostic driver to interface with the BMP280 pressure sensor"
+description = "A platform agnostic driver to interface with the BMP388 pressure sensor"
 documentation = "https://docs.rs/bmp280"
-keywords = ["embedded-hal-driver", "accelerometer", "compass", "MEMS"]
+keywords = ["embedded-hal-driver", "pressure"]
 license = "MIT"
-name = "bmp280-ehal"
-repository = "https://github.com/copterust/bmp280"
-version = "0.0.4-alpha.0"
+name = "bmp388"
+repository = "https://github.com/ibutra/bmp388"
+version = "0.0.1"
 
 [dependencies]
 embedded-hal = "0.2.1"

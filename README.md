@@ -1,8 +1,6 @@
-# `bmp280`
+# bmp388
 
-> no_std driver for the bmp280 (pressure sensor).
-
-[![Build Status](https://travis-ci.org/copterust/bmp280.svg?branch=master)](https://travis-ci.org/copterust/bmp280)
+> no_std driver for the bmp388 (pressure sensor).
 
 ## What works
 
@@ -10,7 +8,7 @@
 
 ## Supported chips
 
-* `BMP280`;
+* `BMP388`;
 
 
 ## Basic usage
@@ -19,29 +17,33 @@ Include [library](https://crates.io/crates/bmp280) as a dependency in your Cargo
 [![crates.io](http://meritbadge.herokuapp.com/bmp280?style=flat-square)](https://crates.io/crates/bmp280):
 
 ```
-[dependencies.bmp280-ehal]
+[dependencies.bmp388]
 version = "<version>"
 ```
 
 Use embedded-hal implementation to get I2C handle and delay then create bmp280 handle:
 
 ```rust
-extern crate bmp280_ehal; // or just use bmp280; if 2018 edition is used.
+extern crate bmp388; // or just use bmp388; if 2018 edition is used.
 
 // to create sensor with default configuration:
-let mut lsm = bmp280_ehal::BMP280::new(i2c)?;
+let mut lsm = bmp388::BMP388::new(i2c)?;
 // to get pressure:
 let pres = ps.pressure();
 println!("{:?}", pres);
 ```
 
-## More examples
-
-Number of examples can be found in [proving-ground](https://github.com/copterust/proving-ground) repo.
-
 ## Documentation
 
-API Docs available on [docs.rs](https://docs.rs/bmp280).
+API Docs available on [docs.rs](todo).
+
+## ToDo:
+
+* Implement FiFo Buffer support
+
+#Origin
+
+Based on the [bmp280 crate](https://github.com/copterust/bmp280) by Roma Sokolov and Alexander Zhuravlev.
 
 ## License
 
