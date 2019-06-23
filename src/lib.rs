@@ -55,8 +55,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             dig_p11: 0,
         };
 
-        if chip.id() == 0x50 {
-            chip.read_calibration();
+        if chip.id()? == 0x50 {
+            chip.read_calibration()?;
         }
 
         Ok(chip)
@@ -64,11 +64,9 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 }
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
-    fn read_calibration(&mut self) {
+    fn read_calibration(&mut self) -> Result<(), I2C::Error> {
         let mut data: [u8; 21] = [0; 21];
-        let _ = self
-            .com
-            .write_read(ADDRESS, &[Register::calib00 as u8], &mut data);
+        self.com.write_read(ADDRESS, &[Register::calib00 as u8], &mut data)?;
 
         self.dig_t1 = (data[0] as u16) | ((data[1] as u16) << 8);
         self.dig_t2 = (data[2] as u16) | ((data[3] as u16) << 8);
@@ -85,24 +83,23 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         self.dig_p9 = (data[17] as i16) | ((data[18] as i16) << 8);
         self.dig_p10 = data[19] as i8;
         self.dig_p11 = data[20] as i8;
+        Ok(())
     }
 
     /// Reads and returns sensor values
-    pub fn sensor_values(&mut self) -> SensorData {
+    pub fn sensor_values(&mut self) -> Result<SensorData, I2C::Error> {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
-        let _ = self
-            .com
-            .write_read(ADDRESS, &[Register::sensor_data as u8], &mut data);
+        self.com.write_read(ADDRESS, &[Register::sensor_data as u8], &mut data)?;
         let uncompensated_press = (data[0] as u32) | (data[1] as u32) << 8 | (data[2] as u32) << 16;
         let uncompensated_temp = (data[3] as u32) | (data[4] as u32) << 8 | (data[5] as u32) << 16;
 
         let temp = self.compensate_temp(uncompensated_temp);
         let press = self.compensate_pressure(uncompensated_press, temp);
 
-        SensorData {
+        Ok(SensorData {
             pressure: press,
             temperature: temp,
-        }
+        })
 
     }
 
@@ -160,16 +157,16 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     }
 
     /// Sets power settings
-    pub fn set_power_control(&mut self, new: PowerControl) {
+    pub fn set_power_control(&mut self, new: PowerControl) -> Result<(), I2C::Error> {
         let mode = (new.mode as u8) << 4;
         let temp_en = (new.temperature_enable as u8) << 1;
         let press_en = new.pressure_enable as u8;
-        self.write_byte(Register::pwr_ctrl, mode | temp_en | press_en);
+        self.write_byte(Register::pwr_ctrl, mode | temp_en | press_en)
     }
 
     /// Gets power settings
-    pub fn power_control(&mut self) -> PowerControl {
-        let value = self.read_byte(Register::pwr_ctrl);
+    pub fn power_control(&mut self) -> Result<PowerControl, I2C::Error> {
+        let value = self.read_byte(Register::pwr_ctrl)?;
         let press_en = (value & 0b1) != 0;
         let temp_en = (value & 0b10) != 0;
         let mode = match value & (0b11 << 4) >> 4 {
@@ -177,24 +174,24 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             x if x == PowerMode::Normal as u8 => PowerMode::Normal,
             _ => PowerMode::Forced,
         };
-        PowerControl{
+        Ok(PowerControl{
             pressure_enable: press_en,
             temperature_enable: temp_en,
             mode: mode
-        }
+        })
     }
 
 
     ///Sets sampling rate
-    pub fn set_sampling_rate(&mut self, new: SamplingRate) {
+    pub fn set_sampling_rate(&mut self, new: SamplingRate) -> Result<(), I2C::Error> {
         let sampling_rate = new as u8;
-        self.write_byte(Register::odr, sampling_rate);
+        self.write_byte(Register::odr, sampling_rate)
     }
 
     /// Returns current sampling rate
-    pub fn sampling_rate(&mut self) -> SamplingRate {
-        let value = self.read_byte(Register::odr);
-        match value {
+    pub fn sampling_rate(&mut self) -> Result<SamplingRate, I2C::Error> {
+        let value = self.read_byte(Register::odr)?;
+        let value = match value {
             x if x == SamplingRate::odr_1 as u8 => SamplingRate::odr_1,
             x if x == SamplingRate::odr_2 as u8 => SamplingRate::odr_2,
             x if x == SamplingRate::odr_4 as u8 => SamplingRate::odr_4,
@@ -213,14 +210,14 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             x if x == SamplingRate::odr_32768 as u8 => SamplingRate::odr_32768,
             x if x == SamplingRate::odr_65536 as u8 => SamplingRate::odr_65536,
             _ => SamplingRate::odr_131072,
-        }
-
+        };
+        Ok(value)
 
     }
 
     /// Returns current filter
-    pub fn filter(&mut self) -> Filter {
-        let config = self.read_byte(Register::config);
+    pub fn filter(&mut self) -> Result<Filter, I2C::Error> {
+        let config = self.read_byte(Register::config)?;
         let filter = match config {
             x if x == Filter::c0 as u8 => Filter::c0,
             x if x == Filter::c1 as u8 => Filter::c1,
@@ -231,26 +228,26 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             x if x == Filter::c63 as u8 => Filter::c63,
             _ => Filter::c127,
         };
-        filter
+        Ok(filter)
     }
 
     /// Sets filter
-    pub fn set_filter(&mut self, new: Filter) {
+    pub fn set_filter(&mut self, new: Filter) -> Result<(), I2C::Error> {
         let filter = new as u8;
-        self.write_byte(Register::config, filter);
+        self.write_byte(Register::config, filter)
     }
 
     /// Sets oversampling configuration
-    pub fn set_oversampling(&mut self, new: OversamplingConfig) {
+    pub fn set_oversampling(&mut self, new: OversamplingConfig) -> Result<(), I2C::Error> {
         let osr_t: u8 = (new.osr4_t as u8) << 3;
         let osr_p: u8 = new.osr_p as u8;
         let osr: u8 = osr_t | osr_p;
-        self.write_byte(Register::osr, osr);
+        self.write_byte(Register::osr, osr)
     }
 
     /// Get oversampling configuration
-    pub fn oversampling(&mut self) -> OversamplingConfig {
-        let value = self.read_byte(Register::osr);
+    pub fn oversampling(&mut self) -> Result<OversamplingConfig, I2C::Error> {
+        let value = self.read_byte(Register::osr)?;
         let osr4_t = match (value & (0b111 << 3)) >> 3 {
             x if x == Oversampling::x1 as u8 => Oversampling::x1,
             x if x == Oversampling::x2 as u8 => Oversampling::x2,
@@ -267,24 +264,24 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             x if x == Oversampling::x16 as u8 => Oversampling::x16,
             _ => Oversampling::x32,
         };
-        OversamplingConfig {
+        Ok(OversamplingConfig {
             osr_p: osr_p,
             osr4_t: osr4_t,
-        }
+        })
     }
 
     /// Sets interrupt configuration
-    pub fn set_interrupt_config(&mut self, new: InterruptConfig) {
+    pub fn set_interrupt_config(&mut self, new: InterruptConfig) -> Result<(), I2C::Error> {
         let mode = new.output as u8;
         let level = (new.active_high as u8) << 1;
         let latch = (new.latch as u8) << 2;
         let data_ready = (new.data_ready_interrupt_enable as u8) << 6;
-        self.write_byte(Register::int_ctrl, mode | level | latch | data_ready);
+        self.write_byte(Register::int_ctrl, mode | level | latch | data_ready)
     }
 
     /// Returns current interrupt configuration
-    pub fn interrupt_config(&mut self) -> InterruptConfig {
-        let value = self.read_byte(Register::int_ctrl);
+    pub fn interrupt_config(&mut self) -> Result<InterruptConfig, I2C::Error> {
+        let value = self.read_byte(Register::int_ctrl)?;
         let mode = match value & 0b1 {
             0 => OutputMode::PushPull,
             _ => OutputMode::OpenDrain,
@@ -293,35 +290,37 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         let latch = value & (1 << 2) != 0;
         let data_ready = value & (1 << 6) != 0;
 
-        InterruptConfig {
+        Ok(InterruptConfig {
             output: mode,
             active_high: level,
             latch: latch,
             data_ready_interrupt_enable: data_ready,
-        }
+        })
     }
 
     /// Returns device id
-    pub fn id(&mut self) -> u8 {
+    pub fn id(&mut self) -> Result<u8, I2C::Error> {
         self.read_byte(Register::id)
     }
 
     /// Software reset, emulates POR
-    pub fn reset(&mut self) {
-        self.write_byte(Register::cmd, 0xB6); // Magic from documentation
+    pub fn reset(&mut self) -> Result<(), I2C::Error>{
+        self.write_byte(Register::cmd, 0xB6) // Magic from documentation
     }
 
-    fn write_byte(&mut self, reg: Register, byte: u8) {
+    fn write_byte(&mut self, reg: Register, byte: u8) -> Result<(), I2C::Error>{
         let mut buffer = [0];
-        let _ = self
+        self
             .com
-            .write_read(ADDRESS, &[reg as u8, byte], &mut buffer);
+            .write_read(ADDRESS, &[reg as u8, byte], &mut buffer)
     }
 
-    fn read_byte(&mut self, reg: Register) -> u8 {
+    fn read_byte(&mut self, reg: Register) -> Result<u8, I2C::Error> {
         let mut data: [u8; 1] = [0];
-        let _ = self.com.write_read(ADDRESS, &[reg as u8], &mut data);
-        data[0]
+        match self.com.write_read(ADDRESS, &[reg as u8], &mut data) {
+            Ok(_) => Ok(data[0]),
+            Err(err) => Err(err),
+        }
     }
 }
 
