@@ -2,15 +2,6 @@
 
 > no_std driver for the bmp388 (pressure sensor).
 
-## What works
-
-- Pressure sensor
-
-## Supported chips
-
-* `BMP388`;
-
-
 ## Basic usage
 
 Include [library](https://crates.io/crates/bmp280) as a dependency in your Cargo.toml
@@ -21,15 +12,15 @@ Include [library](https://crates.io/crates/bmp280) as a dependency in your Cargo
 version = "<version>"
 ```
 
-Use embedded-hal implementation to get I2C handle and delay then create bmp280 handle:
+Use embedded-hal implementation to get I2C handle and delay then create bmp388 handle:
 
 ```rust
 extern crate bmp388; // or just use bmp388; if 2018 edition is used.
 
 // to create sensor with default configuration:
-let mut lsm = bmp388::BMP388::new(i2c)?;
+let mut ps = bmp388::BMP388::new(i2c)?;
 // to get pressure:
-let pres = ps.pressure();
+let pres = ps.sensor_values();
 println!("{:?}", pres);
 ```
 
