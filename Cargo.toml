@@ -1,5 +1,5 @@
 [package]
-authors = ["Stefan Rakel", "Roma Sokolov", "Alexander Zhuravlev"]
+authors = ["Stefan Rakel"]
 categories = ["embedded", "hardware-support", "no-std"]
 description = "A platform agnostic driver to interface with the BMP388 pressure sensor"
 documentation = "https://docs.rs/bmp388"
@@ -7,7 +7,7 @@ keywords = ["embedded-hal-driver", "pressure"]
 license = "MIT"
 name = "bmp388"
 repository = "https://github.com/ibutra/bmp388"
-version = "0.0.2"
+version = "0.0.3"
 readme = "README.md"
 
 [dependencies]
