@@ -4,7 +4,7 @@
 
 ## Basic usage
 
-Include [library](https://crates.io/crates/bmp280) as a dependency in your Cargo.toml
+Include [library](https://crates.io/crates/bmp388) as a dependency in your Cargo.toml
 [![crates.io](http://meritbadge.herokuapp.com/bmp388)](https://crates.io/crates/bmp388):
 
 ```
