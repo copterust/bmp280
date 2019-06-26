@@ -56,6 +56,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         };
 
         if chip.id()? == 0x50 {
+            chip.reset()?;
             chip.read_calibration()?;
         }
 
@@ -106,17 +107,17 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Compensates a pressure value
     fn compensate_pressure(&mut self, uncompensated: u32, compensated_temp: f64) -> f64 {
         let uncompensated = uncompensated as f64;
-        let p1 = (self.dig_p1 as f64) / 1048576.0; //2^20
-        let p2 = (self.dig_p2 as f64) / 536870912.0; //2^29
-        let p3 = (self.dig_p3 as f64) / 4294967296.0; //2^32
-        let p4 = (self.dig_p4 as f64) / 137438953472.0; //2^37
+        let p1 = ((self.dig_p1 as f64) - 16_384.0) / 1_048_576.0; //2^14 / 2^20
+        let p2 = ((self.dig_p2 as f64) - 16_384.0) / 536_870_912.0; //2^14 / 2^29
+        let p3 = (self.dig_p3 as f64) / 4_294_967_296.0; //2^32
+        let p4 = (self.dig_p4 as f64) / 137_438_953_472.0; //2^37
         let p5 = (self.dig_p5 as f64) / 0.125; //2^-3
         let p6 = (self.dig_p6 as f64) / 64.0; //2^6
         let p7 = (self.dig_p7 as f64) / 256.0; //2^8
-        let p8 = (self.dig_p8 as f64) / 32768.0; //2^15
-        let p9 = (self.dig_p9 as f64) / 281474976710656.0; //2^48
-        let p10 = (self.dig_p10 as f64) / 281474976710656.0; //2^48
-        let p11 = (self.dig_p11 as f64) / 36893488147419103232.0; //2^65
+        let p8 = (self.dig_p8 as f64) / 32_768.0; //2^15
+        let p9 = (self.dig_p9 as f64) / 281_474_976_710_656.0; //2^48
+        let p10 = (self.dig_p10 as f64) / 281_474_976_710_656.0; //2^48
+        let p11 = (self.dig_p11 as f64) / 36_893_488_147_419_103_232.0; //2^65
 
         let mut partial_data1 = p6 * compensated_temp;
         let mut partial_data2 = p7 * (compensated_temp * compensated_temp);
@@ -145,8 +146,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         let partial_data2 : f64;
 
         let t1 = (self.dig_t1 as f64) / 0.00390625; //2^-8
-        let t2 = (self.dig_t2 as f64) / 1073741824.0; //2^30
-        let t3 = (self.dig_t3 as f64) / 281474976710656.0; //2^48
+        let t2 = (self.dig_t2 as f64) / 1_073_741_824.0; //2^30
+        let t3 = (self.dig_t3 as f64) / 281_474_976_710_656.0; //2^48
 
         partial_data1 = (uncompensated as f64) - t1;
         partial_data2 = partial_data1 * t2;
@@ -192,24 +193,24 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     pub fn sampling_rate(&mut self) -> Result<SamplingRate, I2C::Error> {
         let value = self.read_byte(Register::odr)?;
         let value = match value {
-            x if x == SamplingRate::odr_1 as u8 => SamplingRate::odr_1,
-            x if x == SamplingRate::odr_2 as u8 => SamplingRate::odr_2,
-            x if x == SamplingRate::odr_4 as u8 => SamplingRate::odr_4,
-            x if x == SamplingRate::odr_8 as u8 => SamplingRate::odr_8,
-            x if x == SamplingRate::odr_16 as u8 => SamplingRate::odr_16,
-            x if x == SamplingRate::odr_32 as u8 => SamplingRate::odr_32,
-            x if x == SamplingRate::odr_64 as u8 => SamplingRate::odr_64,
-            x if x == SamplingRate::odr_128 as u8 => SamplingRate::odr_128,
-            x if x == SamplingRate::odr_256 as u8 => SamplingRate::odr_256,
-            x if x == SamplingRate::odr_512 as u8 => SamplingRate::odr_512,
-            x if x == SamplingRate::odr_1024 as u8 => SamplingRate::odr_1024,
-            x if x == SamplingRate::odr_2048 as u8 => SamplingRate::odr_2048,
-            x if x == SamplingRate::odr_4096 as u8 => SamplingRate::odr_4096,
-            x if x == SamplingRate::odr_8192 as u8 => SamplingRate::odr_8192,
-            x if x == SamplingRate::odr_16384 as u8 => SamplingRate::odr_16384,
-            x if x == SamplingRate::odr_32768 as u8 => SamplingRate::odr_32768,
-            x if x == SamplingRate::odr_65536 as u8 => SamplingRate::odr_65536,
-            _ => SamplingRate::odr_131072,
+            x if x == SamplingRate::ms5 as u8 => SamplingRate::ms5,
+            x if x == SamplingRate::ms10 as u8 => SamplingRate::ms10,
+            x if x == SamplingRate::ms20 as u8 => SamplingRate::ms20,
+            x if x == SamplingRate::ms40 as u8 => SamplingRate::ms40,
+            x if x == SamplingRate::ms80 as u8 => SamplingRate::ms80,
+            x if x == SamplingRate::ms160 as u8 => SamplingRate::ms160,
+            x if x == SamplingRate::ms320 as u8 => SamplingRate::ms320,
+            x if x == SamplingRate::ms640 as u8 => SamplingRate::ms640,
+            x if x == SamplingRate::ms1_280 as u8 => SamplingRate::ms1_280,
+            x if x == SamplingRate::ms2_560 as u8 => SamplingRate::ms2_560,
+            x if x == SamplingRate::ms5_120 as u8 => SamplingRate::ms5_120,
+            x if x == SamplingRate::ms1_024 as u8 => SamplingRate::ms1_024,
+            x if x == SamplingRate::ms2_048 as u8 => SamplingRate::ms2_048,
+            x if x == SamplingRate::ms4_096 as u8 => SamplingRate::ms4_096,
+            x if x == SamplingRate::ms8_192 as u8 => SamplingRate::ms8_192,
+            x if x == SamplingRate::ms16_384 as u8 => SamplingRate::ms16_384,
+            x if x == SamplingRate::ms32_768 as u8 => SamplingRate::ms32_768,
+            _ => SamplingRate::ms65_536,
         };
         Ok(value)
 
@@ -298,6 +299,26 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         })
     }
 
+    ///Get the status register
+    pub fn status(&mut self) -> Result<Status, I2C::Error> {
+        let status = self.read_byte(Register::status)?;
+        Ok(Status{
+            command_ready: status & (1 << 4) != 0,
+            pressure_data_ready: status & (1 << 5) != 0,
+            temperature_data_ready: status & (1 << 6) != 0,
+        })
+    }
+    
+    ///Get the error register
+    pub fn error(&mut self) -> Result<Error, I2C::Error> {
+        let error = self.read_byte(Register::err)?;
+        Ok(Error{
+            fatal: error & (1 << 0) != 0,
+            cmd: error & (1 << 1) != 0,
+            config: error & (1 << 2) != 0,
+        })
+    }
+
     /// Returns device id
     pub fn id(&mut self) -> Result<u8, I2C::Error> {
         self.read_byte(Register::id)
@@ -322,6 +343,26 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             Err(err) => Err(err),
         }
     }
+}
+
+///Error
+pub struct Error {
+    ///Fatal error
+    pub fatal: bool,
+    ///Command error
+    pub cmd: bool,
+    ///Configuration error
+    pub config: bool,
+}
+
+///Status
+pub struct Status {
+    ///Indicates whether chip is ready for a command
+    pub command_ready: bool,
+    ///Indicates whether pressure data is ready
+    pub pressure_data_ready: bool,
+    ///Indicates whether temperature data is ready
+    pub temperature_data_ready: bool,
 }
 
 /// Interrupt configuration
@@ -379,41 +420,41 @@ pub struct OversamplingConfig {
 /// Standby time in ms
 pub enum SamplingRate {
     ///Prescaler 1 (5ms)
-    odr_1 = 0x00,
+    ms5 = 0x00,
     ///Prescaler 2 (10ms)
-    odr_2 = 0x01,
+    ms10 = 0x01,
     ///Prescaler 4 (20ms)
-    odr_4 = 0x02,
+    ms20 = 0x02,
     ///Prescaler 8 (40ms)
-    odr_8 = 0x03,
+    ms40 = 0x03,
     ///Prescaler 16 (80ms)
-    odr_16 = 0x04,
+    ms80 = 0x04,
     ///Prescaler 32 (160ms)
-    odr_32 = 0x05,
+    ms160 = 0x05,
     ///Prescaler 64 (320ms)
-    odr_64 = 0x06,
+    ms320 = 0x06,
     ///Prescaler 128 (640ms)
-    odr_128 = 0x07,
+    ms640 = 0x07,
     ///Prescaler 256 (1.280s)
-    odr_256 = 0x08,
+    ms1_280 = 0x08,
     ///Prescaler 512 (2.560s)
-    odr_512 = 0x09,
+    ms2_560 = 0x09,
     ///Prescaler 1024 (5.120s)
-    odr_1024 = 0x0A,
+    ms5_120 = 0x0A,
     ///Prescaler 2048 (10.24s)
-    odr_2048 = 0x0B,
+    ms1_024 = 0x0B,
     ///Prescaler 4096 (20.48s)
-    odr_4096 = 0x0C,
+    ms2_048 = 0x0C,
     ///Prescaler 8192 (40.96s)
-    odr_8192 = 0x0D,
+    ms4_096 = 0x0D,
     ///Prescaler 16384 (81.92s)
-    odr_16384 = 0x0E,
+    ms8_192 = 0x0E,
     ///Prescaler 32768 (163.84s)
-    odr_32768 = 0x0F,
+    ms16_384 = 0x0F,
     ///Prescaler 65536 (327.68s)
-    odr_65536 = 0x10,
+    ms32_768 = 0x10,
     ///Prescaler 131072 (655.36s)
-    odr_131072 = 0x11,
+    ms65_536 = 0x11,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -478,4 +519,6 @@ enum Register {
     int_ctrl = 0x19,
     calib00 = 0x31,
     cmd = 0x7E,
+    status = 0x03,
+    err = 0x02,
 }
