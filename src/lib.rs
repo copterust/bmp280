@@ -1,6 +1,28 @@
 //! A platform agnostic driver to interface with the BMP280 (pressure sensor)
-//!
+//! 
 //! This driver is built using [`embedded-hal`] traits.
+//! 
+//! ## Technical data
+//! 
+//! | Parameter                           | Technical Data                                    | Environment & Settings                          |
+//! | ----------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
+//! | **Operation range**                 | `300..1100 hPa`.                                  | `-40..+85 °C`                                   |
+//! | **Absolute accuracy**               | `± 1 hPa`                                         | `0..+65 °C`                                     |
+//! | **Relative accuracy**               | `±0.12 hPa` (typical), equivalent to `±1 m`.      | `+25..+40 °C` @ `700..900 hPa`                  |
+//! | **Absolute accuracy pressure**      | `300..1100 hPa` (typical)                         | `0..+65 °C`                                     |
+//! | **Relative accuracy pressure**      | `900..1100 hPa` (typical)                         | `25..+40 °C`                                    |
+//! | **Average current consumption**     | `3.4 μA` (typical)                                | Standard power mode @ `1 Hz` data refresh rate  |
+//! | **Average current consumption**     | `2.74 μA` (typical)                               | Ultra-low power mode @ `1 Hz` data refresh rate |
+//! | **Average current consumption**     | `0.1 μA` (typical)                                | Sleep mode @ `0 Hz` data refresh rate           |
+//! | **Average measurement time**        | `5.5 msec`                                        | Ultra-low power mode                            |
+//! | **Supply voltage VDDIO**            | `1.2..3.6 V`                                      |                                                 |
+//! | **Supply voltage VDD**              | `1.71..3.6 V`                                     |                                                 |
+//! | **Data resolution**                 | `0.01 hPa` (equivalent to `< 10 cm`),  `0.01 °C`. |                                                 |
+//! | **Temperature coefficient offset**  | `± 0.12 hPa` (typical) equivalent to `±1 m`       | `+25°..+40 °C` @ `900 hPa`                      |
+//! | **Interface**                       | `I²C` & `SPI`                                     |                                                 |
+//! | **Package dimensions**              | 8-Pin LGA with metal: `2.0 x 2.5 x 0.95 mm³`      |                                                 |
+//! 
+//! (For more information refer to the sensor's [product page](https://www.bosch-sensortec.com/bst/products/all_products/bmp280))
 
 #![deny(missing_docs)]
 #![deny(warnings)]
