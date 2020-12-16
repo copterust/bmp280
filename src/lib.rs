@@ -221,8 +221,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
     pub fn status(&mut self) -> Status {
         let status = self.read_byte(Register::status);
         Status {
-            measuring: (1 == status & 0b00001000),
-            im_update: (1 == status & 0b00000001),
+            measuring: 0 != (status & 0b00001000),
+            im_update: 0 != (status & 0b00000001),
         }
     }
 
