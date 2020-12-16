@@ -137,7 +137,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
             * (self.dig_t3 as f64);
         self.t_fine = (v1 + v2) as i32;
 
-        ((v1 + v2) / 5120.0)
+        (v1 + v2) / 5120.0
     }
 
     /// Returns current config
