@@ -95,7 +95,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
 
         let mut var1 = ((self.t_fine as f64) / 2.0) - 64000.0;
         let mut var2 = var1 * var1 * (self.dig_p6 as f64) / 32768.0;
-        var2 = var2 + var1 * (self.dig_p5 as f64) * 2.0;
+        var2 += var1 * (self.dig_p5 as f64) * 2.0;
         var2 = (var2 / 4.0) + ((self.dig_p4 as f64) * 65536.0);
         var1 = ((self.dig_p3 as f64) * var1 * var1 / 524288.0 + (self.dig_p2 as f64) * var1)
             / 524288.0;
@@ -105,7 +105,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
             pressure = (pressure - (var2 / 4096.0)) * 6250.0 / var1;
             var1 = (self.dig_p9 as f64) * pressure * pressure / 2147483648.0;
             var2 = pressure * (self.dig_p8 as f64) / 32768.0;
-            pressure = pressure + (var1 + var2 + (self.dig_p7 as f64)) / 16.0;
+            pressure += (var1 + var2 + (self.dig_p7 as f64)) / 16.0;
         }
         pressure
     }
@@ -163,8 +163,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
             _ => Filter::unknown,
         };
         Config {
-            t_sb: t_sb,
-            filter: filter,
+            t_sb,
+            filter,
         }
     }
 
@@ -211,9 +211,9 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         };
 
         Control {
-            osrs_t: osrs_t,
-            osrs_p: osrs_p,
-            mode: mode,
+            osrs_t,
+            osrs_p,
+            mode,
         }
     }
 
