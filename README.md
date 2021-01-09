@@ -29,9 +29,9 @@ Use embedded-hal implementation to get I2C handle and delay then create bmp280 h
 extern crate bmp280_ehal; // or just use bmp280; if 2018 edition is used.
 
 // to create sensor with default configuration:
-let mut lsm = bmp280_ehal::BMP280::new(i2c)?;
+let mut bmp = bmp280_ehal::BMP280::new(i2c)?;
 // to get pressure:
-let pres = ps.pressure();
+let pres = bmp.pressure();
 println!("{:?}", pres);
 ```
 
