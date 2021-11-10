@@ -10,11 +10,13 @@ extern crate embedded_hal as ehal;
 
 use core::fmt;
 
-const ADDRESS: u8 = 0x76;
+/// The default address for the BMP280
+pub const DEFAULT_ADDRESS: u8 = 0x76;
 
 /// BMP280 driver
 pub struct BMP280<I2C: ehal::blocking::i2c::WriteRead> {
     com: I2C,
+    addr: u8,
     // Temperature compensation
     dig_t1: u16,
     dig_t2: i16,
@@ -34,12 +36,13 @@ pub struct BMP280<I2C: ehal::blocking::i2c::WriteRead> {
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
     /// Creates new BMP280 driver
-    pub fn new<E>(i2c: I2C) -> Result<BMP280<I2C>, E>
+    pub fn new<E>(i2c: I2C, addr: u8) -> Result<BMP280<I2C>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
         let mut chip = BMP280 {
             com: i2c,
+            addr,
             dig_t1: 0,
             dig_t2: 0,
             dig_t3: 0,
@@ -68,7 +71,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         let mut data: [u8; 24] = [0; 24];
         let _ = self
             .com
-            .write_read(ADDRESS, &[Register::calib00 as u8], &mut data);
+            .write_read(self.addr, &[Register::calib00 as u8], &mut data);
 
         self.dig_t1 = ((data[1] as u16) << 8) | (data[0] as u16);
         self.dig_t2 = ((data[3] as i16) << 8) | (data[2] as i16);
@@ -90,7 +93,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
         let _ = self
             .com
-            .write_read(ADDRESS, &[Register::press as u8], &mut data);
+            .write_read(self.addr, &[Register::press as u8], &mut data);
         let press = (data[0] as u32) << 12 | (data[1] as u32) << 4 | (data[2] as u32) >> 4;
 
         let mut var1 = ((self.t_fine as f64) / 2.0) - 64000.0;
@@ -127,7 +130,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
         let _ = self
             .com
-            .write_read(ADDRESS, &[Register::press as u8], &mut data);
+            .write_read(self.addr, &[Register::press as u8], &mut data);
         let _pres = (data[0] as u32) << 12 | (data[1] as u32) << 4 | (data[2] as u32) >> 4;
         let temp = (data[3] as u32) << 12 | (data[4] as u32) << 4 | (data[5] as u32) >> 4;
 
@@ -240,12 +243,12 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         let mut buffer = [0];
         let _ = self
             .com
-            .write_read(ADDRESS, &[reg as u8, byte], &mut buffer);
+            .write_read(self.addr, &[reg as u8, byte], &mut buffer);
     }
 
     fn read_byte(&mut self, reg: Register) -> u8 {
         let mut data: [u8; 1] = [0];
-        let _ = self.com.write_read(ADDRESS, &[reg as u8], &mut data);
+        let _ = self.com.write_read(self.addr, &[reg as u8], &mut data);
         data[0]
     }
 }
