@@ -11,7 +11,7 @@ extern crate embedded_hal as ehal;
 use core::fmt;
 
 /// The default address for the BMP280
-pub const DEFAULT_ADDRESS: u8 = 0x76;
+const DEFAULT_ADDRESS: u8 = 0x76;
 
 /// BMP280 driver
 pub struct BMP280<I2C: ehal::blocking::i2c::WriteRead> {
@@ -35,8 +35,8 @@ pub struct BMP280<I2C: ehal::blocking::i2c::WriteRead> {
 }
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
-    /// Creates new BMP280 driver
-    pub fn new<E>(i2c: I2C, addr: u8) -> Result<BMP280<I2C>, E>
+    /// Creates new BMP280 driver with the specified address
+    pub fn new_with_address<E>(i2c: I2C, addr: u8) -> Result<BMP280<I2C>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
@@ -63,6 +63,14 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         }
 
         Ok(chip)
+    }
+
+    /// Create a new BMP280 driver with the default address
+    pub fn new<E>(i2c: I2C) -> Result<BMP280<I2C>, E>
+    where
+        I2C: ehal::blocking::i2c::WriteRead<Error = E>
+    {
+        Self::new_with_address(i2c, DEFAULT_ADDRESS)
     }
 }
 
