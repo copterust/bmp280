@@ -32,7 +32,7 @@ pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Creates new BMP388 driver
-    pub fn new<E>(i2c: I2C, addr: u8) -> Result<BMP388<I2C>, E>
+    pub fn new<E>(i2c: I2C, addr: u8, delay: &mut impl ehal::blocking::delay::DelayMs<u8>) -> Result<BMP388<I2C>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
@@ -57,6 +57,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
         if chip.id()? == 0x50 {
             chip.reset()?;
+            delay.delay_ms(10); // without this the first few bytes of calib data could be incorrectly zero
             chip.read_calibration()?;
         }
 
