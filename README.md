@@ -15,8 +15,8 @@
 
 ## Basic usage
 
-Include [library](https://crates.io/crates/bmp280) as a dependency in your Cargo.toml
-[![crates.io](http://meritbadge.herokuapp.com/bmp280?style=flat-square)](https://crates.io/crates/bmp280):
+Include [library](https://crates.io/crates/bmp280-ehal) as a dependency in your Cargo.toml
+[![crates.io](http://meritbadge.herokuapp.com/bmp280?style=flat-square)](https://crates.io/crates/bmp280-ehal):
 
 ```
 [dependencies.bmp280-ehal]
@@ -41,7 +41,7 @@ Number of examples can be found in [proving-ground](https://github.com/copterust
 
 ## Documentation
 
-API Docs available on [docs.rs](https://docs.rs/bmp280).
+API Docs available on [docs.rs](https://docs.rs/bmp280-ehal).
 
 ## License
 
