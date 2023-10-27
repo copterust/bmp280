@@ -8,6 +8,16 @@
 
 extern crate embedded_hal as ehal;
 
+/// The I2C address of a [`BMP388`] sensor.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum Addr {
+    /// The primary I2C address.
+    Primary = 0x76,
+    /// The secondary I2C address.
+    Secondary = 0x77,
+}
+
 /// BMP388 driver
 pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     com: I2C,
@@ -138,7 +148,6 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         let compensated_press = partial_out1 + partial_out2 + partial_data4;
 
         compensated_press
-        
     }
 
     /// Compensates a temperature value
@@ -309,7 +318,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             temperature_data_ready: status & (1 << 6) != 0,
         })
     }
-    
+
     ///Get the error register
     pub fn error(&mut self) -> Result<Error, I2C::Error> {
         let error = self.read_byte(Register::err)?;
