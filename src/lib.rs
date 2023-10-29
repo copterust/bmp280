@@ -6,15 +6,27 @@
 #![deny(warnings)]
 #![no_std]
 
-extern crate embedded_hal as ehal;
+use embedded_hal as ehal;
+
+/// The expected value of the ChipId register
+pub const CHIP_ID: u8 = 0x50;
 
 /// The I2C address of a [`BMP388`] sensor.
+///
+/// > The 7-bit device address is 111011x. The 6 MSB bits are fixed. The last bit is changeable by SDO value and can be changed
+/// > during operation. Connecting SDO to GND results in slave address 1110110 (0x76); connection it to VDDIO results in slave
+/// > address 1110111 (0x77), which is the same as BMP180’s I²C address. The SDO pin cannot be left floating; if left floating, the
+/// > I²C address will be undefined.
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Addr {
     /// The primary I2C address.
+    ///
+    /// When SDO is connected to GND
     Primary = 0x76,
     /// The secondary I2C address.
+    ///
+    /// When SDO is connected to VDDIO
     Secondary = 0x77,
 }
 
@@ -42,7 +54,11 @@ pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Creates new BMP388 driver
-    pub fn new<E>(i2c: I2C, addr: u8, delay: &mut impl ehal::blocking::delay::DelayMs<u8>) -> Result<BMP388<I2C>, E>
+    pub fn new<E>(
+        i2c: I2C,
+        addr: u8,
+        delay: &mut impl ehal::blocking::delay::DelayMs<u8>,
+    ) -> Result<BMP388<I2C>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
@@ -65,7 +81,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             dig_p11: 0,
         };
 
-        if chip.id()? == 0x50 {
+        if chip.id()? == CHIP_ID {
             chip.reset()?;
             delay.delay_ms(10); // without this the first few bytes of calib data could be incorrectly zero
             chip.read_calibration()?;
@@ -78,7 +94,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     fn read_calibration(&mut self) -> Result<(), I2C::Error> {
         let mut data: [u8; 21] = [0; 21];
-        self.com.write_read(self.addr, &[Register::calib00 as u8], &mut data)?;
+        self.com
+            .write_read(self.addr, &[Register::calib00 as u8], &mut data)?;
 
         self.dig_t1 = (data[0] as u16) | ((data[1] as u16) << 8);
         self.dig_t2 = (data[2] as u16) | ((data[3] as u16) << 8);
@@ -101,22 +118,22 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Reads and returns sensor values
     pub fn sensor_values(&mut self) -> Result<SensorData, I2C::Error> {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
-        self.com.write_read(self.addr, &[Register::sensor_data as u8], &mut data)?;
+        self.com
+            .write_read(self.addr, &[Register::sensor_data as u8], &mut data)?;
         let uncompensated_press = (data[0] as u32) | (data[1] as u32) << 8 | (data[2] as u32) << 16;
         let uncompensated_temp = (data[3] as u32) | (data[4] as u32) << 8 | (data[5] as u32) << 16;
 
-        let temp = self.compensate_temp(uncompensated_temp);
-        let press = self.compensate_pressure(uncompensated_press, temp);
+        let temperature = self.compensate_temp(uncompensated_temp);
+        let pressure = self.compensate_pressure(uncompensated_press, temperature);
 
         Ok(SensorData {
-            pressure: press,
-            temperature: temp,
+            pressure,
+            temperature,
         })
-
     }
 
     /// Compensates a pressure value
-    fn compensate_pressure(&mut self, uncompensated: u32, compensated_temp: f64) -> f64 {
+    fn compensate_pressure(&self, uncompensated: u32, compensated_temp: f64) -> f64 {
         let uncompensated = uncompensated as f64;
         let p1 = ((self.dig_p1 as f64) - 16_384.0) / 1_048_576.0; //2^14 / 2^20
         let p2 = ((self.dig_p2 as f64) - 16_384.0) / 536_870_912.0; //2^14 / 2^29
@@ -145,26 +162,19 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         partial_data3 = partial_data1 * partial_data2;
         let partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * p11;
 
-        let compensated_press = partial_out1 + partial_out2 + partial_data4;
-
-        compensated_press
+        partial_out1 + partial_out2 + partial_data4
     }
 
     /// Compensates a temperature value
-    fn compensate_temp(&mut self, uncompensated : u32) -> f64 {
-        let partial_data1 : f64;
-        let partial_data2 : f64;
-
+    fn compensate_temp(&self, uncompensated: u32) -> f64 {
         let t1 = (self.dig_t1 as f64) / 0.00390625; //2^-8
         let t2 = (self.dig_t2 as f64) / 1_073_741_824.0; //2^30
         let t3 = (self.dig_t3 as f64) / 281_474_976_710_656.0; //2^48
 
-        partial_data1 = (uncompensated as f64) - t1;
-        partial_data2 = partial_data1 * t2;
+        let partial_data1 = (uncompensated as f64) - t1;
+        let partial_data2 = partial_data1 * t2;
 
-        let compensated = partial_data2 + (partial_data1 * partial_data1) * t3; 
-
-        return compensated;
+        partial_data2 + (partial_data1 * partial_data1) * t3
     }
 
     /// Sets power settings
@@ -178,20 +188,19 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Gets power settings
     pub fn power_control(&mut self) -> Result<PowerControl, I2C::Error> {
         let value = self.read_byte(Register::pwr_ctrl)?;
-        let press_en = (value & 0b1) != 0;
-        let temp_en = (value & 0b10) != 0;
+        let pressure_enable = (value & 0b1) != 0;
+        let temperature_enable = (value & 0b10) != 0;
         let mode = match value & (0b11 << 4) >> 4 {
             x if x == PowerMode::Sleep as u8 => PowerMode::Sleep,
             x if x == PowerMode::Normal as u8 => PowerMode::Normal,
             _ => PowerMode::Forced,
         };
-        Ok(PowerControl{
-            pressure_enable: press_en,
-            temperature_enable: temp_en,
-            mode: mode
+        Ok(PowerControl {
+            pressure_enable,
+            temperature_enable,
+            mode,
         })
     }
-
 
     ///Sets sampling rate
     pub fn set_sampling_rate(&mut self, new: SamplingRate) -> Result<(), I2C::Error> {
@@ -223,13 +232,12 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             _ => SamplingRate::ms65_536,
         };
         Ok(value)
-
     }
 
     /// Returns current filter
     pub fn filter(&mut self) -> Result<Filter, I2C::Error> {
         let config = self.read_byte(Register::config)?;
-        let filter = match config {
+        let filter = match config << 1 {
             x if x == Filter::c0 as u8 => Filter::c0,
             x if x == Filter::c1 as u8 => Filter::c1,
             x if x == Filter::c3 as u8 => Filter::c3,
@@ -250,10 +258,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
     /// Sets oversampling configuration
     pub fn set_oversampling(&mut self, new: OversamplingConfig) -> Result<(), I2C::Error> {
-        let osr_t: u8 = (new.osr4_t as u8) << 3;
-        let osr_p: u8 = new.osr_p as u8;
-        let osr: u8 = osr_t | osr_p;
-        self.write_byte(Register::osr, osr)
+        self.write_byte(Register::osr, new.to_reg())
     }
 
     /// Get oversampling configuration
@@ -275,10 +280,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             x if x == Oversampling::x16 as u8 => Oversampling::x16,
             _ => Oversampling::x32,
         };
-        Ok(OversamplingConfig {
-            osr_p: osr_p,
-            osr4_t: osr4_t,
-        })
+        Ok(OversamplingConfig { osr_p, osr4_t })
     }
 
     /// Sets interrupt configuration
@@ -304,7 +306,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         Ok(InterruptConfig {
             output: mode,
             active_high: level,
-            latch: latch,
+            latch,
             data_ready_interrupt_enable: data_ready,
         })
     }
@@ -312,17 +314,14 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     ///Get the status register
     pub fn status(&mut self) -> Result<Status, I2C::Error> {
         let status = self.read_byte(Register::status)?;
-        Ok(Status{
-            command_ready: status & (1 << 4) != 0,
-            pressure_data_ready: status & (1 << 5) != 0,
-            temperature_data_ready: status & (1 << 6) != 0,
-        })
+
+        Ok(Status::from_reg(status))
     }
 
     ///Get the error register
     pub fn error(&mut self) -> Result<Error, I2C::Error> {
         let error = self.read_byte(Register::err)?;
-        Ok(Error{
+        Ok(Error {
             fatal: error & (1 << 0) != 0,
             cmd: error & (1 << 1) != 0,
             config: error & (1 << 2) != 0,
@@ -335,14 +334,13 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     }
 
     /// Software reset, emulates POR
-    pub fn reset(&mut self) -> Result<(), I2C::Error>{
+    pub fn reset(&mut self) -> Result<(), I2C::Error> {
         self.write_byte(Register::cmd, 0xB6) // Magic from documentation
     }
 
-    fn write_byte(&mut self, reg: Register, byte: u8) -> Result<(), I2C::Error>{
+    fn write_byte(&mut self, reg: Register, byte: u8) -> Result<(), I2C::Error> {
         let mut buffer = [0];
-        self
-            .com
+        self.com
             .write_read(self.addr, &[reg as u8, byte], &mut buffer)
     }
 
@@ -366,6 +364,7 @@ pub struct Error {
 }
 
 ///Status
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Status {
     ///Indicates whether chip is ready for a command
     pub command_ready: bool,
@@ -375,7 +374,19 @@ pub struct Status {
     pub temperature_data_ready: bool,
 }
 
+impl Status {
+    /// Creates the Status from a register value
+    pub(crate) fn from_reg(value: u8) -> Self {
+        Self {
+            command_ready: value & (1 << 4) != 0,
+            pressure_data_ready: value & (1 << 5) != 0,
+            temperature_data_ready: value & (1 << 6) != 0,
+        }
+    }
+}
+
 /// Interrupt configuration
+#[derive(Debug, Copy, Clone)]
 pub struct InterruptConfig {
     ///Output mode of interrupt pin
     pub output: OutputMode,
@@ -385,10 +396,10 @@ pub struct InterruptConfig {
     pub latch: bool,
     ///Data ready interrupt
     pub data_ready_interrupt_enable: bool,
-
 }
 
 ///Output mode for interrupt pin
+#[derive(Debug, Copy, Clone)]
 pub enum OutputMode {
     ///Push-pull output mode
     PushPull = 0,
@@ -400,77 +411,141 @@ pub enum OutputMode {
 ///Sensor data
 pub struct SensorData {
     ///The measured pressure
-    pub pressure : f64,
-    /// The emasured temperature
-    pub temperature : f64,
+    pub pressure: f64,
+    /// The measured temperature
+    pub temperature: f64,
 }
 
-#[derive(Debug, Copy, Clone)]
-/// Powercontrol
+/// Power Control
+///
+/// Register: `PWR_CTRL`1
+/// ```
+/// // Default accordingly to the datasheet
+/// ```
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PowerControl {
-    ///Pressuresensor enable
-    pub pressure_enable : bool,
-    ///Temperatursensor enable
-    pub temperature_enable : bool,
-    /// Powermode
+    /// Pressure sensor enable
+    pub pressure_enable: bool,
+    /// Temperature sensor enable
+    pub temperature_enable: bool,
+    /// Power mode
     pub mode: PowerMode,
+}
+
+impl Default for PowerControl {
+    /// default value for the register is `0x00`
+    fn default() -> Self {
+        Self {
+            pressure_enable: false,
+            temperature_enable: false,
+            mode: PowerMode::default(),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
 ///Oversampling Config (OSR)
 pub struct OversamplingConfig {
-    ///Pressure oversampling
+    /// Pressure oversampling
     pub osr_p: Oversampling,
-    ///Temperature oversampling
+    /// Temperature oversampling
     pub osr4_t: Oversampling,
+}
+
+impl OversamplingConfig {
+    pub(crate) fn to_reg(self) -> u8 {
+        let osr_t: u8 = (self.osr4_t as u8) << 3;
+        let osr_p: u8 = self.osr_p as u8;
+
+        osr_t | osr_p
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
 #[allow(non_camel_case_types)]
 /// Standby time in ms
+///
+/// Register 0x1D “ODR”
 pub enum SamplingRate {
-    ///Prescaler 1 (5ms)
+    /// Prescaler 1 (5ms, 200 Hz)
+    ///
+    /// Description: ODR 200 Hz
     ms5 = 0x00,
-    ///Prescaler 2 (10ms)
+    /// Prescaler 2 (10ms, 100 Hz)
+    ///
+    /// Description: ODR 100 Hz
     ms10 = 0x01,
-    ///Prescaler 4 (20ms)
+    /// Prescaler 4 (20ms, 50 Hz)
+    ///
+    /// Description: ODR 50 Hz
     ms20 = 0x02,
-    ///Prescaler 8 (40ms)
+    /// Prescaler 8 (40ms, 25 Hz)
+    ///
+    /// Description: ODR 25 Hz
     ms40 = 0x03,
-    ///Prescaler 16 (80ms)
+    /// Prescaler 16 (80ms, 25/2 Hz)
+    ///
+    /// Description: ODR 25/2 Hz
     ms80 = 0x04,
-    ///Prescaler 32 (160ms)
+    /// Prescaler 32 (160ms, 25/4 Hz)
+    ///
+    /// Description: ODR 25/4 Hz
     ms160 = 0x05,
-    ///Prescaler 64 (320ms)
+    /// Prescaler 64 (320ms, 25/8 Hz)
+    ///
+    /// Description: ODR 25/8 Hz
     ms320 = 0x06,
-    ///Prescaler 128 (640ms)
+    /// Prescaler 128 (640ms, 25/18 Hz)
+    ///
+    /// Description: ODR 25/18 Hz
     ms640 = 0x07,
-    ///Prescaler 256 (1.280s)
+    /// Prescaler 256 (1.280s, 25/32 Hz)
+    ///
+    /// Description: ODR 25/32 Hz
     ms1_280 = 0x08,
-    ///Prescaler 512 (2.560s)
+    /// Prescaler 512 (2.560s, 25/64 Hz)
+    ///
+    /// Description: ODR 25/64 Hz
     ms2_560 = 0x09,
-    ///Prescaler 1024 (5.120s)
+    /// Prescaler 1024 (5.120s, 25/128 Hz)
+    ///
+    /// Description: ODR 25/128 Hz
     ms5_120 = 0x0A,
-    ///Prescaler 2048 (10.24s)
+    /// Prescaler 2048 (10.24s, 25/256 Hz)
+    ///
+    /// Description: ODR 25/256 Hz
     ms1_024 = 0x0B,
-    ///Prescaler 4096 (20.48s)
+    /// Prescaler 4096 (20.48s, 25/512 Hz)
+    ///
+    /// Description: ODR 25/512 Hz
     ms2_048 = 0x0C,
-    ///Prescaler 8192 (40.96s)
+    /// Prescaler 8192 (40.96s, 25/1024 Hz)
+    ///
+    /// Description: ODR 25/1024 Hz
     ms4_096 = 0x0D,
-    ///Prescaler 16384 (81.92s)
+    /// Prescaler 16384 (81.92s, 25/2048 Hz)
+    ///
+    /// Description: ODR 25/2048 Hz
     ms8_192 = 0x0E,
-    ///Prescaler 32768 (163.84s)
+    /// Prescaler 32768 (163.84s, 25/4096 Hz)
+    ///
+    /// Description: ODR 25/4096 Hz
     ms16_384 = 0x0F,
-    ///Prescaler 65536 (327.68s)
+    /// Prescaler 65536 (327.68s, 25/8192 Hz)
+    ///
+    /// Description: ODR 25/8192 Hz
     ms32_768 = 0x10,
-    ///Prescaler 131072 (655.36s)
+    /// Prescaler 131072 (655.36s, 25/16384 Hz)
+    ///
+    /// Description: ODR 25/16384 Hz
     ms65_536 = 0x11,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 #[allow(non_camel_case_types)]
 /// The time constant of IIR filter
 pub enum Filter {
+    #[default]
     ///off
     c0 = 0b000,
     ///Coefficient 1
@@ -494,23 +569,69 @@ pub enum Filter {
 /// Oversampling
 pub enum Oversampling {
     /// x1
+    ///
+    /// Pressure setting - Ultra low power
+    /// Typical pressure resolution - 16 bit / 2.64 Pa
+    /// Recommended temperature oversampling: x1
+    ///
+    /// Typical temperature resolution - 16 bit / 0.0050 °C
     x1 = 0b000,
     /// x2
+    ///
+    /// Pressure setting - Low power
+    /// Typical pressure resolution - 17 bit / 1.32 Pa
+    /// Recommended temperature oversampling: x1
+    ///
+    /// Typical temperature resolution - 17 bit / 0.0025 °C
     x2 = 0b001,
     /// x4
+    ///
+    /// Pressure setting - Standard resolution
+    /// Typical pressure resolution - 18 bit / 0.66 Pa
+    /// Recommended temperature oversampling: x1
+    ///
+    /// Typical temperature resolution - 18 bit / 0.0012 °C
     x4 = 0b010,
     /// x8
+    ///
+    /// Pressure setting - High resolution
+    /// Typical pressure resolution - 19 bit / 0.33 Pa
+    /// Recommended temperature oversampling: x1
+    ///
+    /// Typical temperature resolution - 19 bit / 0.0006 °C
     x8 = 0b011,
     /// x16
+    ///
+    /// Pressure setting - Ultra high resolution
+    /// Typical pressure resolution - 20 bit / 0.17 Pa
+    /// Recommended temperature oversampling: x2
+    ///
+    /// Typical temperature resolution - 20 bit / 0.0003 °C
     x16 = 0b100,
     /// x32
+    ///
+    /// Pressure setting - Highest resolution
+    /// Typical pressure resolution - 21 bit / 0.085 Pa
+    /// Recommended temperature oversampling: x2
+    ///
+    /// Typical temperature resolution - 21 bit / 0.00015 °C
     x32 = 0b101,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 /// PowerMode
+///
+/// ```
+/// use bmp388::PowerMode;
+///
+/// let default = PowerMode::default();
+/// assert_eq!(PowerMode::Sleep, default);
+/// ```
 pub enum PowerMode {
     /// Sleep
+    ///
+    /// Default Power model on start-up
+    #[default]
     Sleep = 0b00,
     /// Forced
     Forced = 0b01,
@@ -519,6 +640,8 @@ pub enum PowerMode {
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 enum Register {
     id = 0x00,
     sensor_data = 0x04,
@@ -531,4 +654,34 @@ enum Register {
     cmd = 0x7E,
     status = 0x03,
     err = 0x02,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_status_reg_value() {
+        let all_true_status = Status::from_reg(0b01110000);
+        assert_eq!(
+            all_true_status,
+            Status {
+                command_ready: true,
+                pressure_data_ready: true,
+                temperature_data_ready: true,
+            }
+        )
+    }
+
+    #[test]
+    fn test_oversampling_config_to_reg_value() {
+        let config = OversamplingConfig {
+            // bits 0 to 2 - 101
+            osr_p: Oversampling::x32,
+            // bits 3 to 5 - 001
+            osr4_t: Oversampling::x2,
+        };
+
+        assert_eq!(0b001101, config.to_reg());
+    }
 }
