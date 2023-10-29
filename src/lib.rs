@@ -244,7 +244,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
     /// Sets filter
     pub fn set_filter(&mut self, new: Filter) -> Result<(), I2C::Error> {
-        let filter = new as u8;
+        let filter = (new as u8) << 1;
         self.write_byte(Register::config, filter)
     }
 
