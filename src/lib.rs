@@ -8,11 +8,20 @@
 
 extern crate embedded_hal as ehal;
 
-const ADDRESS: u8 = 0x76;
+/// The I2C address of a [`BMP388`] sensor.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum Addr {
+    /// The primary I2C address.
+    Primary = 0x76,
+    /// The secondary I2C address.
+    Secondary = 0x77,
+}
 
 /// BMP388 driver
 pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     com: I2C,
+    addr: u8,
     // Temperature compensation
     dig_t1: u16,
     dig_t2: u16,
@@ -33,12 +42,13 @@ pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Creates new BMP388 driver
-    pub fn new<E>(i2c: I2C) -> Result<BMP388<I2C>, E>
+    pub fn new<E>(i2c: I2C, addr: u8, delay: &mut impl ehal::blocking::delay::DelayMs<u8>) -> Result<BMP388<I2C>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
         let mut chip = BMP388 {
             com: i2c,
+            addr,
             dig_t1: 0,
             dig_t2: 0,
             dig_t3: 0,
@@ -57,6 +67,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
         if chip.id()? == 0x50 {
             chip.reset()?;
+            delay.delay_ms(10); // without this the first few bytes of calib data could be incorrectly zero
             chip.read_calibration()?;
         }
 
@@ -67,7 +78,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     fn read_calibration(&mut self) -> Result<(), I2C::Error> {
         let mut data: [u8; 21] = [0; 21];
-        self.com.write_read(ADDRESS, &[Register::calib00 as u8], &mut data)?;
+        self.com.write_read(self.addr, &[Register::calib00 as u8], &mut data)?;
 
         self.dig_t1 = (data[0] as u16) | ((data[1] as u16) << 8);
         self.dig_t2 = (data[2] as u16) | ((data[3] as u16) << 8);
@@ -90,7 +101,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Reads and returns sensor values
     pub fn sensor_values(&mut self) -> Result<SensorData, I2C::Error> {
         let mut data: [u8; 6] = [0, 0, 0, 0, 0, 0];
-        self.com.write_read(ADDRESS, &[Register::sensor_data as u8], &mut data)?;
+        self.com.write_read(self.addr, &[Register::sensor_data as u8], &mut data)?;
         let uncompensated_press = (data[0] as u32) | (data[1] as u32) << 8 | (data[2] as u32) << 16;
         let uncompensated_temp = (data[3] as u32) | (data[4] as u32) << 8 | (data[5] as u32) << 16;
 
@@ -137,7 +148,6 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         let compensated_press = partial_out1 + partial_out2 + partial_data4;
 
         compensated_press
-        
     }
 
     /// Compensates a temperature value
@@ -308,7 +318,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             temperature_data_ready: status & (1 << 6) != 0,
         })
     }
-    
+
     ///Get the error register
     pub fn error(&mut self) -> Result<Error, I2C::Error> {
         let error = self.read_byte(Register::err)?;
@@ -333,12 +343,12 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         let mut buffer = [0];
         self
             .com
-            .write_read(ADDRESS, &[reg as u8, byte], &mut buffer)
+            .write_read(self.addr, &[reg as u8, byte], &mut buffer)
     }
 
     fn read_byte(&mut self, reg: Register) -> Result<u8, I2C::Error> {
         let mut data: [u8; 1] = [0];
-        match self.com.write_read(ADDRESS, &[reg as u8], &mut data) {
+        match self.com.write_read(self.addr, &[reg as u8], &mut data) {
             Ok(_) => Ok(data[0]),
             Err(err) => Err(err),
         }
