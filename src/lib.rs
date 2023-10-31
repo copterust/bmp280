@@ -1,6 +1,25 @@
 //! A platform agnostic driver to interface with the BMP388 (pressure sensor)
 //!
 //! This driver is built using [`embedded-hal`] traits.
+//!
+//! # Examples
+//!
+//! ```ignore
+//! use bmp388::{BMP388, Addr, SensorData, PowerControl, PowerMode};
+//! // depends on your board/chip
+//! let i2c = todo!("Create the I2C interface");
+//! // depends on your board/chip and/or crates you use.
+//! let delay = todo!("Create a delay that implements `embedded_hal::delay::DelayMs`");
+//! let mut sensor = BMP388::new(i2c, Addr::Primary as u8, delay).unwrap();
+//!
+//! // default `PowerMode` is `Sleep` so the first thing we need to change is the `PowerControl`.
+//! // For continues reading using `Normal` mode,
+//! // otherwise you can use `Force` but you have to set it before each sensor data reading.
+//!
+//! sensor.set_power_control(PowerControl::normal()).unwrap();
+//!
+//! let sensor_data: SensorData = sensor.sensor_values().unwrap();
+//! ```
 
 #![deny(missing_docs)]
 #![deny(warnings)]
@@ -31,6 +50,25 @@ pub enum Addr {
 }
 
 /// BMP388 driver
+///
+/// # Examples
+///
+/// ```ignore
+/// use bmp388::{BMP388, Addr, SensorData};
+/// // depends on your board/chip
+/// let i2c = todo!("Create the I2C interface");
+/// // depends on your board/chip and/or crates you use.
+/// let delay = todo!("Create a delay that implements `embedded_hal::delay::DelayMs`");
+/// let mut sensor = BMP388::new(i2c, Addr::Primary as u8, delay).unwrap();
+///
+/// // default `PowerMode` is `Sleep` so the first thing we need to change is the `PowerControl`.
+/// // For continues reading using `Normal` mode,
+/// // otherwise you can use `Force` but you have to set it before each sensor data reading.
+///
+/// sensor.set_power_control(PowerControl::normal()).unwrap();
+///
+/// let sensor_data: SensorData = sensor.sensor_values().unwrap();
+/// ```
 pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     com: I2C,
     addr: u8,
@@ -54,6 +92,8 @@ pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
 
 impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     /// Creates new BMP388 driver
+    ///
+    /// The Delay is used to correctly wait for the calibration data after resetting the chip.
     pub fn new<E>(
         i2c: I2C,
         addr: u8,
@@ -83,7 +123,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
         if chip.id()? == CHIP_ID {
             chip.reset()?;
-            delay.delay_ms(10); // without this the first few bytes of calib data could be incorrectly zero
+            // without this the first few bytes of calib data could be incorrectly zero
+            delay.delay_ms(10);
             chip.read_calibration()?;
         }
 
@@ -179,27 +220,14 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
     /// Sets power settings
     pub fn set_power_control(&mut self, new: PowerControl) -> Result<(), I2C::Error> {
-        let mode = (new.mode as u8) << 4;
-        let temp_en = (new.temperature_enable as u8) << 1;
-        let press_en = new.pressure_enable as u8;
-        self.write_byte(Register::pwr_ctrl, mode | temp_en | press_en)
+        self.write_byte(Register::pwr_ctrl, new.to_reg())
     }
 
     /// Gets power settings
     pub fn power_control(&mut self) -> Result<PowerControl, I2C::Error> {
         let value = self.read_byte(Register::pwr_ctrl)?;
-        let pressure_enable = (value & 0b1) != 0;
-        let temperature_enable = (value & 0b10) != 0;
-        let mode = match value & (0b11 << 4) >> 4 {
-            x if x == PowerMode::Sleep as u8 => PowerMode::Sleep,
-            x if x == PowerMode::Normal as u8 => PowerMode::Normal,
-            _ => PowerMode::Forced,
-        };
-        Ok(PowerControl {
-            pressure_enable,
-            temperature_enable,
-            mode,
-        })
+
+        Ok(PowerControl::from_reg(value))
     }
 
     ///Sets sampling rate
@@ -432,6 +460,42 @@ pub struct PowerControl {
     pub mode: PowerMode,
 }
 
+impl PowerControl {
+    /// Create a new PowerControl with `PowerMode::Normal` and enable both sensors.
+    pub fn normal() -> Self {
+        Self {
+            pressure_enable: true,
+            temperature_enable: true,
+            mode: PowerMode::Normal,
+        }
+    }
+
+    pub(crate) fn from_reg(reg: u8) -> Self {
+        let pressure_enable = (reg & 0b1) != 0;
+        let temperature_enable = (reg & 0b10) != 0;
+        let mode = match reg & (0b11 << 4) >> 4 {
+            x if x == PowerMode::Forced as u8 => PowerMode::Forced,
+            x if x == PowerMode::Normal as u8 => PowerMode::Normal,
+            // in any other case, we assume Sleep as it's the default
+            _ => PowerMode::Sleep,
+        };
+
+        Self {
+            pressure_enable,
+            temperature_enable,
+            mode,
+        }
+    }
+
+    pub(crate) fn to_reg(self) -> u8 {
+        let mode = (self.mode as u8) << 4;
+        let temp_en = (self.temperature_enable as u8) << 1;
+        let press_en = self.pressure_enable as u8;
+
+        mode | temp_en | press_en
+    }
+}
+
 impl Default for PowerControl {
     /// default value for the register is `0x00`
     fn default() -> Self {
@@ -627,6 +691,7 @@ pub enum Oversampling {
 /// let default = PowerMode::default();
 /// assert_eq!(PowerMode::Sleep, default);
 /// ```
+#[repr(u8)]
 pub enum PowerMode {
     /// Sleep
     ///
