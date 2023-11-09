@@ -26,6 +26,7 @@
 #![no_std]
 
 use embedded_hal as ehal;
+use num_traits::Pow;
 
 /// The expected value of the ChipId register
 pub const CHIP_ID: u8 = 0x50;
@@ -48,6 +49,12 @@ pub enum Addr {
     /// When SDO is connected to VDDIO
     Secondary = 0x77,
 }
+
+/// Standard sea level pressure, unit: pa
+///
+/// > The standard atmosphere (symbol: atm) is a unit of pressure defined as 101,325 Pa.
+/// _Wikipedia_
+const STANDARD_SEA_LEVEL_PRESSURE: f64 = 101325.0;
 
 /// BMP388 driver
 ///
@@ -72,6 +79,10 @@ pub enum Addr {
 pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     com: I2C,
     addr: u8,
+    /// Sea level pressure, initially it's [`STANDARD_SEA_LEVEL_PRESSURE`], however,
+    /// you can calibrate it for your current altitude by calling
+    /// [`BMP388::calibrated_absolute_difference`].
+    sea_level_pressure: f64,
     // Temperature compensation
     dig_t1: u16,
     dig_t2: u16,
@@ -105,6 +116,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         let mut chip = BMP388 {
             com: i2c,
             addr,
+            sea_level_pressure: STANDARD_SEA_LEVEL_PRESSURE,
             dig_t1: 0,
             dig_t2: 0,
             dig_t3: 0,
@@ -171,6 +183,41 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             pressure,
             temperature,
         })
+    }
+
+    /// Calculate altitude, unit: meters
+    ///
+    /// Reads the sensor's values and calculates the altitude based on
+    /// the atmospheric pressure measured by the sensor.
+    ///
+    /// If the reference value is provided before, the absolute value of the current
+    /// position pressure is calculated according to the calibrated sea level atmospheric pressure
+    ///
+    /// See <https://www.weather.gov/media/epz/wxcalc/pressureAltitude.pdf>
+    pub fn altitude(&mut self) -> Result<f64, I2C::Error> {
+        let pressure = self.sensor_values()?.pressure;
+
+        let altitude = 44307.69396 * (1.0 - (pressure / self.sea_level_pressure).pow(0.190284));
+
+        Ok(altitude)
+    }
+    /// Calibrate the the altitude based on the current pressure.
+    ///
+    /// Takes the given current location altitude as the reference value to
+    /// eliminate the absolute difference for subsequent pressure and altitude data.
+    /// Make sure you call this method only when needed or it can throw off the
+    /// value of newer readings.
+    ///
+    /// # Returns
+    /// The newly calculated sea level pressure.
+    ///
+    /// Taken from the Arduino library for BMP388: <https://github.com/DFRobot/DFRobot_BMP3XX/blob/master/python/raspberrypi/DFRobot_BMP3XX.py>
+    pub fn calibrated_absolute_difference(&mut self, altitude: f64) -> Result<f64, I2C::Error> {
+        let pressure = self.sensor_values()?.pressure;
+
+        self.sea_level_pressure = pressure / (1.0 - (altitude / 44307.69396)).pow(5.255302);
+
+        Ok(self.sea_level_pressure)
     }
 
     /// Compensates a pressure value
