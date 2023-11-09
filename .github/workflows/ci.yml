@@ -1,0 +1,49 @@
+on: [push, pull_request]
+
+name: Continuous integration
+
+# Stops the running workflow of previous pushes
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lints-and-checks:
+    name: Lints and checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+            components: rustfmt, clippy
+
+      - name: Rustfmt lints
+        run: cargo fmt --all -- --check
+
+      - name: Clippy lints
+        run: cargo clippy --no-deps -- -D warnings
+    
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+          - 1.36 # MSRV
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - run: cargo build
+      - run: cargo test
+
