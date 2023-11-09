@@ -9,7 +9,7 @@ name = "bmp388"
 repository = "https://github.com/ibutra/bmp388"
 version = "0.1.0"
 readme = "README.md"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 embedded-hal = "0.2.1"
