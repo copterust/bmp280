@@ -24,6 +24,19 @@
 #![deny(missing_docs)]
 #![deny(warnings)]
 #![no_std]
+#![cfg_attr(
+    feature = "nightly",
+    feature(async_fn_in_trait, impl_trait_projections)
+)]
+#![cfg_attr(
+    feature = "nightly",
+    allow(stable_features, unknown_lints, async_fn_in_trait)
+)]
+
+use core::marker::PhantomData;
+
+#[cfg(feature = "nightly")]
+mod asynch;
 
 use embedded_hal as ehal;
 use num_traits::Pow;
@@ -56,6 +69,23 @@ pub enum Addr {
 /// _Wikipedia_
 const STANDARD_SEA_LEVEL_PRESSURE: f64 = 101325.0;
 
+/// Async bus mode
+pub struct Async;
+/// Blocking bus mode
+pub struct Blocking;
+
+/// Bus mode
+pub trait Mode: sealed::Mode {}
+
+impl Mode for Async {}
+impl sealed::Mode for Async {}
+impl Mode for Blocking {}
+impl sealed::Mode for Blocking {}
+
+mod sealed {
+    pub trait Mode {}
+}
+
 /// BMP388 driver
 ///
 /// # Examples
@@ -76,7 +106,7 @@ const STANDARD_SEA_LEVEL_PRESSURE: f64 = 101325.0;
 ///
 /// let sensor_data: SensorData = sensor.sensor_values().unwrap();
 /// ```
-pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
+pub struct BMP388<I2C, M: Mode> {
     com: I2C,
     addr: u8,
     /// Sea level pressure, initially it's [`STANDARD_SEA_LEVEL_PRESSURE`], however,
@@ -84,10 +114,32 @@ pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     /// [`BMP388::calibrated_absolute_difference`].
     sea_level_pressure: f64,
     // Temperature compensation
+    temperature_calibration: TemperatureCalibration,
+    // Pressure calibration
+    pressure_calibration: PressureCalibration,
+    phantom: PhantomData<M>,
+}
+
+///
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TemperatureCalibration {
     dig_t1: u16,
     dig_t2: u16,
     dig_t3: i8,
-    // Pressure calibration
+}
+
+impl TemperatureCalibration {
+    /// Updates the clibration data for the Temperature
+    pub fn update_calibration(&mut self, reg_data: [u8; 21]) {
+        self.dig_t1 = (reg_data[0] as u16) | ((reg_data[1] as u16) << 8);
+        self.dig_t2 = (reg_data[2] as u16) | ((reg_data[3] as u16) << 8);
+        self.dig_t3 = reg_data[4] as i8;
+    }
+}
+
+///
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PressureCalibration {
     dig_p1: i16,
     dig_p2: i16,
     dig_p3: i8,
@@ -101,15 +153,79 @@ pub struct BMP388<I2C: ehal::blocking::i2c::WriteRead> {
     dig_p11: i8,
 }
 
-impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
+impl PressureCalibration {
+    /// Updates the clibration data for the Pressure
+    pub fn update_calibration(&mut self, reg_data: [u8; 21]) {
+        self.dig_p1 = (reg_data[5] as i16) | ((reg_data[6] as i16) << 8);
+        self.dig_p2 = (reg_data[7] as i16) | ((reg_data[8] as i16) << 8);
+        self.dig_p3 = reg_data[9] as i8;
+        self.dig_p4 = reg_data[10] as i8;
+        self.dig_p5 = (reg_data[11] as u16) | ((reg_data[12] as u16) << 8);
+        self.dig_p6 = (reg_data[13] as u16) | ((reg_data[14] as u16) << 8);
+        self.dig_p7 = reg_data[15] as i8;
+        self.dig_p8 = reg_data[16] as i8;
+        self.dig_p9 = (reg_data[17] as i16) | ((reg_data[18] as i16) << 8);
+        self.dig_p10 = reg_data[19] as i8;
+        self.dig_p11 = reg_data[20] as i8;
+    }
+}
+
+impl<I2C, M: Mode> BMP388<I2C, M> {
+    /// Compensates a pressure value
+    pub(crate) fn compensate_pressure(&self, uncompensated: u32, compensated_temp: f64) -> f64 {
+        let uncompensated = uncompensated as f64;
+        let p1 = ((self.pressure_calibration.dig_p1 as f64) - 16_384.0) / 1_048_576.0; //2^14 / 2^20
+        let p2 = ((self.pressure_calibration.dig_p2 as f64) - 16_384.0) / 536_870_912.0; //2^14 / 2^29
+        let p3 = (self.pressure_calibration.dig_p3 as f64) / 4_294_967_296.0; //2^32
+        let p4 = (self.pressure_calibration.dig_p4 as f64) / 137_438_953_472.0; //2^37
+        let p5 = (self.pressure_calibration.dig_p5 as f64) / 0.125; //2^-3
+        let p6 = (self.pressure_calibration.dig_p6 as f64) / 64.0; //2^6
+        let p7 = (self.pressure_calibration.dig_p7 as f64) / 256.0; //2^8
+        let p8 = (self.pressure_calibration.dig_p8 as f64) / 32_768.0; //2^15
+        let p9 = (self.pressure_calibration.dig_p9 as f64) / 281_474_976_710_656.0; //2^48
+        let p10 = (self.pressure_calibration.dig_p10 as f64) / 281_474_976_710_656.0; //2^48
+        let p11 = (self.pressure_calibration.dig_p11 as f64) / 36_893_488_147_419_103_232.0; //2^65
+
+        let mut partial_data1 = p6 * compensated_temp;
+        let mut partial_data2 = p7 * (compensated_temp * compensated_temp);
+        let mut partial_data3 = p8 * (compensated_temp * compensated_temp * compensated_temp);
+        let partial_out1 = p5 + partial_data1 + partial_data2 + partial_data3;
+
+        partial_data1 = p2 * compensated_temp;
+        partial_data2 = p3 * (compensated_temp * compensated_temp);
+        partial_data3 = p4 * (compensated_temp * compensated_temp * compensated_temp);
+        let partial_out2 = uncompensated * (p1 + partial_data1 + partial_data2 + partial_data3);
+
+        partial_data1 = uncompensated * uncompensated;
+        partial_data2 = p9 + p10 * compensated_temp;
+        partial_data3 = partial_data1 * partial_data2;
+        let partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * p11;
+
+        partial_out1 + partial_out2 + partial_data4
+    }
+
+    /// Compensates a temperature value
+    pub(crate) fn compensate_temp(&self, uncompensated: u32) -> f64 {
+        let t1 = (self.temperature_calibration.dig_t1 as f64) / 0.00390625; //2^-8
+        let t2 = (self.temperature_calibration.dig_t2 as f64) / 1_073_741_824.0; //2^30
+        let t3 = (self.temperature_calibration.dig_t3 as f64) / 281_474_976_710_656.0; //2^48
+
+        let partial_data1 = (uncompensated as f64) - t1;
+        let partial_data2 = partial_data1 * t2;
+
+        partial_data2 + (partial_data1 * partial_data1) * t3
+    }
+}
+
+impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     /// Creates new BMP388 driver
     ///
     /// The Delay is used to correctly wait for the calibration data after resetting the chip.
-    pub fn new<E>(
+    pub fn new_blocking<E>(
         i2c: I2C,
         addr: u8,
         delay: &mut impl ehal::blocking::delay::DelayMs<u8>,
-    ) -> Result<BMP388<I2C>, E>
+    ) -> Result<BMP388<I2C, Blocking>, E>
     where
         I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
@@ -117,20 +233,9 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
             com: i2c,
             addr,
             sea_level_pressure: STANDARD_SEA_LEVEL_PRESSURE,
-            dig_t1: 0,
-            dig_t2: 0,
-            dig_t3: 0,
-            dig_p1: 0,
-            dig_p2: 0,
-            dig_p3: 0,
-            dig_p4: 0,
-            dig_p5: 0,
-            dig_p6: 0,
-            dig_p7: 0,
-            dig_p8: 0,
-            dig_p9: 0,
-            dig_p10: 0,
-            dig_p11: 0,
+            temperature_calibration: TemperatureCalibration::default(),
+            pressure_calibration: PressureCalibration::default(),
+            phantom: PhantomData,
         };
 
         if chip.id()? == CHIP_ID {
@@ -142,29 +247,15 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
 
         Ok(chip)
     }
-}
 
-impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
     fn read_calibration(&mut self) -> Result<(), I2C::Error> {
         let mut data: [u8; 21] = [0; 21];
         self.com
             .write_read(self.addr, &[Register::calib00 as u8], &mut data)?;
 
-        self.dig_t1 = (data[0] as u16) | ((data[1] as u16) << 8);
-        self.dig_t2 = (data[2] as u16) | ((data[3] as u16) << 8);
-        self.dig_t3 = data[4] as i8;
+        self.temperature_calibration.update_calibration(data);
+        self.pressure_calibration.update_calibration(data);
 
-        self.dig_p1 = (data[5] as i16) | ((data[6] as i16) << 8);
-        self.dig_p2 = (data[7] as i16) | ((data[8] as i16) << 8);
-        self.dig_p3 = data[9] as i8;
-        self.dig_p4 = data[10] as i8;
-        self.dig_p5 = (data[11] as u16) | ((data[12] as u16) << 8);
-        self.dig_p6 = (data[13] as u16) | ((data[14] as u16) << 8);
-        self.dig_p7 = data[15] as i8;
-        self.dig_p8 = data[16] as i8;
-        self.dig_p9 = (data[17] as i16) | ((data[18] as i16) << 8);
-        self.dig_p10 = data[19] as i8;
-        self.dig_p11 = data[20] as i8;
         Ok(())
     }
 
@@ -218,51 +309,6 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C> {
         self.sea_level_pressure = pressure / (1.0 - (altitude / 44307.69396)).pow(5.255302);
 
         Ok(self.sea_level_pressure)
-    }
-
-    /// Compensates a pressure value
-    fn compensate_pressure(&self, uncompensated: u32, compensated_temp: f64) -> f64 {
-        let uncompensated = uncompensated as f64;
-        let p1 = ((self.dig_p1 as f64) - 16_384.0) / 1_048_576.0; //2^14 / 2^20
-        let p2 = ((self.dig_p2 as f64) - 16_384.0) / 536_870_912.0; //2^14 / 2^29
-        let p3 = (self.dig_p3 as f64) / 4_294_967_296.0; //2^32
-        let p4 = (self.dig_p4 as f64) / 137_438_953_472.0; //2^37
-        let p5 = (self.dig_p5 as f64) / 0.125; //2^-3
-        let p6 = (self.dig_p6 as f64) / 64.0; //2^6
-        let p7 = (self.dig_p7 as f64) / 256.0; //2^8
-        let p8 = (self.dig_p8 as f64) / 32_768.0; //2^15
-        let p9 = (self.dig_p9 as f64) / 281_474_976_710_656.0; //2^48
-        let p10 = (self.dig_p10 as f64) / 281_474_976_710_656.0; //2^48
-        let p11 = (self.dig_p11 as f64) / 36_893_488_147_419_103_232.0; //2^65
-
-        let mut partial_data1 = p6 * compensated_temp;
-        let mut partial_data2 = p7 * (compensated_temp * compensated_temp);
-        let mut partial_data3 = p8 * (compensated_temp * compensated_temp * compensated_temp);
-        let partial_out1 = p5 + partial_data1 + partial_data2 + partial_data3;
-
-        partial_data1 = p2 * compensated_temp;
-        partial_data2 = p3 * (compensated_temp * compensated_temp);
-        partial_data3 = p4 * (compensated_temp * compensated_temp * compensated_temp);
-        let partial_out2 = uncompensated * (p1 + partial_data1 + partial_data2 + partial_data3);
-
-        partial_data1 = uncompensated * uncompensated;
-        partial_data2 = p9 + p10 * compensated_temp;
-        partial_data3 = partial_data1 * partial_data2;
-        let partial_data4 = partial_data3 + (uncompensated * uncompensated * uncompensated) * p11;
-
-        partial_out1 + partial_out2 + partial_data4
-    }
-
-    /// Compensates a temperature value
-    fn compensate_temp(&self, uncompensated: u32) -> f64 {
-        let t1 = (self.dig_t1 as f64) / 0.00390625; //2^-8
-        let t2 = (self.dig_t2 as f64) / 1_073_741_824.0; //2^30
-        let t3 = (self.dig_t3 as f64) / 281_474_976_710_656.0; //2^48
-
-        let partial_data1 = (uncompensated as f64) - t1;
-        let partial_data2 = partial_data1 * t2;
-
-        partial_data2 + (partial_data1 * partial_data1) * t3
     }
 
     /// Sets power settings
