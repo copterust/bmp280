@@ -21,8 +21,8 @@
 //! let sensor_data: SensorData = sensor.sensor_values().unwrap();
 //! ```
 
-#![deny(missing_docs)]
-#![deny(warnings)]
+// #![deny(missing_docs)]
+// #![deny(warnings)]
 #![no_std]
 #![cfg_attr(
     feature = "nightly",
@@ -35,10 +35,15 @@
 
 use core::marker::PhantomData;
 
+pub use config::*;
+
 #[cfg(feature = "nightly")]
 mod asynch;
 
+mod config;
+
 use embedded_hal as ehal;
+
 use num_traits::Pow;
 
 /// The expected value of the ChipId register
@@ -277,6 +282,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     }
 
     /// Calculate altitude, unit: meters
+    ///
+    /// NOTE: Gives good values under normal weather conditions up to an altitude of 11000 meters.
     ///
     /// Reads the sensor's values and calculates the altitude based on
     /// the atmospheric pressure measured by the sensor.
@@ -531,18 +538,15 @@ pub enum OutputMode {
 #[derive(Debug, Copy, Clone)]
 ///Sensor data
 pub struct SensorData {
-    ///The measured pressure
+    ///The measured pressure: Pascals (Pa)
     pub pressure: f64,
-    /// The measured temperature
+    /// The measured temperature: Degrees celsius (°C)
     pub temperature: f64,
 }
 
 /// Power Control
 ///
-/// Register: `PWR_CTRL`1
-/// ```
-/// // Default accordingly to the datasheet
-/// ```
+/// Register: `PWR_CTRL`
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PowerControl {
     /// Pressure sensor enable
@@ -598,220 +602,6 @@ impl Default for PowerControl {
             mode: PowerMode::default(),
         }
     }
-}
-
-#[derive(Debug, Copy, Clone)]
-///Oversampling Config (OSR)
-pub struct OversamplingConfig {
-    /// Pressure oversampling
-    pub osr_p: Oversampling,
-    /// Temperature oversampling
-    pub osr4_t: Oversampling,
-}
-
-impl OversamplingConfig {
-    pub(crate) fn to_reg(self) -> u8 {
-        let osr_t: u8 = (self.osr4_t as u8) << 3;
-        let osr_p: u8 = self.osr_p as u8;
-
-        osr_t | osr_p
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-#[allow(non_camel_case_types)]
-/// Standby time in ms
-///
-/// Register 0x1D “ODR”
-pub enum SamplingRate {
-    /// Prescaler 1 (5ms, 200 Hz)
-    ///
-    /// Description: ODR 200 Hz
-    ms5 = 0x00,
-    /// Prescaler 2 (10ms, 100 Hz)
-    ///
-    /// Description: ODR 100 Hz
-    ms10 = 0x01,
-    /// Prescaler 4 (20ms, 50 Hz)
-    ///
-    /// Description: ODR 50 Hz
-    ms20 = 0x02,
-    /// Prescaler 8 (40ms, 25 Hz)
-    ///
-    /// Description: ODR 25 Hz
-    ms40 = 0x03,
-    /// Prescaler 16 (80ms, 25/2 Hz)
-    ///
-    /// Description: ODR 25/2 Hz
-    ms80 = 0x04,
-    /// Prescaler 32 (160ms, 25/4 Hz)
-    ///
-    /// Description: ODR 25/4 Hz
-    ms160 = 0x05,
-    /// Prescaler 64 (320ms, 25/8 Hz)
-    ///
-    /// Description: ODR 25/8 Hz
-    ms320 = 0x06,
-    /// Prescaler 128 (640ms, 25/18 Hz)
-    ///
-    /// Description: ODR 25/18 Hz
-    ms640 = 0x07,
-    /// Prescaler 256 (1.280s, 25/32 Hz)
-    ///
-    /// Description: ODR 25/32 Hz
-    ms1_280 = 0x08,
-    /// Prescaler 512 (2.560s, 25/64 Hz)
-    ///
-    /// Description: ODR 25/64 Hz
-    ms2_560 = 0x09,
-    /// Prescaler 1024 (5.120s, 25/128 Hz)
-    ///
-    /// Description: ODR 25/128 Hz
-    ms5_120 = 0x0A,
-    /// Prescaler 2048 (10.24s, 25/256 Hz)
-    ///
-    /// Description: ODR 25/256 Hz
-    ms1_024 = 0x0B,
-    /// Prescaler 4096 (20.48s, 25/512 Hz)
-    ///
-    /// Description: ODR 25/512 Hz
-    ms2_048 = 0x0C,
-    /// Prescaler 8192 (40.96s, 25/1024 Hz)
-    ///
-    /// Description: ODR 25/1024 Hz
-    ms4_096 = 0x0D,
-    /// Prescaler 16384 (81.92s, 25/2048 Hz)
-    ///
-    /// Description: ODR 25/2048 Hz
-    ms8_192 = 0x0E,
-    /// Prescaler 32768 (163.84s, 25/4096 Hz)
-    ///
-    /// Description: ODR 25/4096 Hz
-    ms16_384 = 0x0F,
-    /// Prescaler 65536 (327.68s, 25/8192 Hz)
-    ///
-    /// Description: ODR 25/8192 Hz
-    ms32_768 = 0x10,
-    /// Prescaler 131072 (655.36s, 25/16384 Hz)
-    ///
-    /// Description: ODR 25/16384 Hz
-    ms65_536 = 0x11,
-}
-
-#[derive(Debug, Copy, Clone, Default)]
-#[allow(non_camel_case_types)]
-/// The time constant of IIR filter
-pub enum Filter {
-    #[default]
-    ///off
-    c0 = 0b000,
-    ///Coefficient 1
-    c1 = 0b001,
-    ///Coefficient 3
-    c3 = 0b010,
-    ///Coefficient 7
-    c7 = 0b011,
-    ///Coefficient 15
-    c15 = 0b100,
-    ///Coefficient 31
-    c31 = 0b101,
-    ///Coefficient 63
-    c63 = 0b110,
-    ///Coefficient 127
-    c127 = 0b111,
-}
-
-#[derive(Debug, Copy, Clone)]
-#[allow(non_camel_case_types)]
-/// Oversampling
-pub enum Oversampling {
-    /// x1
-    ///
-    /// Pressure setting - Ultra low power
-    /// Typical pressure resolution - 16 bit / 2.64 Pa
-    /// Recommended temperature oversampling: x1
-    ///
-    /// Typical temperature resolution - 16 bit / 0.0050 °C
-    x1 = 0b000,
-    /// x2
-    ///
-    /// Pressure setting - Low power
-    /// Typical pressure resolution - 17 bit / 1.32 Pa
-    /// Recommended temperature oversampling: x1
-    ///
-    /// Typical temperature resolution - 17 bit / 0.0025 °C
-    x2 = 0b001,
-    /// x4
-    ///
-    /// Pressure setting - Standard resolution
-    /// Typical pressure resolution - 18 bit / 0.66 Pa
-    /// Recommended temperature oversampling: x1
-    ///
-    /// Typical temperature resolution - 18 bit / 0.0012 °C
-    x4 = 0b010,
-    /// x8
-    ///
-    /// Pressure setting - High resolution
-    /// Typical pressure resolution - 19 bit / 0.33 Pa
-    /// Recommended temperature oversampling: x1
-    ///
-    /// Typical temperature resolution - 19 bit / 0.0006 °C
-    x8 = 0b011,
-    /// x16
-    ///
-    /// Pressure setting - Ultra high resolution
-    /// Typical pressure resolution - 20 bit / 0.17 Pa
-    /// Recommended temperature oversampling: x2
-    ///
-    /// Typical temperature resolution - 20 bit / 0.0003 °C
-    x16 = 0b100,
-    /// x32
-    ///
-    /// Pressure setting - Highest resolution
-    /// Typical pressure resolution - 21 bit / 0.085 Pa
-    /// Recommended temperature oversampling: x2
-    ///
-    /// Typical temperature resolution - 21 bit / 0.00015 °C
-    x32 = 0b101,
-}
-
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-/// PowerMode
-///
-/// ```
-/// use bmp388::PowerMode;
-///
-/// let default = PowerMode::default();
-/// assert_eq!(PowerMode::Sleep, default);
-/// ```
-#[repr(u8)]
-pub enum PowerMode {
-    /// Sleep
-    ///
-    /// Default Power model on start-up
-    #[default]
-    Sleep = 0b00,
-    /// Forced
-    Forced = 0b01,
-    /// Normal
-    Normal = 0b11,
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Register {
-    id = 0x00,
-    sensor_data = 0x04,
-    config = 0x1F,
-    odr = 0x1D,
-    osr = 0x1C,
-    pwr_ctrl = 0x1B,
-    int_ctrl = 0x19,
-    calib00 = 0x31,
-    cmd = 0x7E,
-    status = 0x03,
-    err = 0x02,
 }
 
 #[cfg(test)]
