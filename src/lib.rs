@@ -339,49 +339,22 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     /// Returns current sampling rate
     pub fn sampling_rate(&mut self) -> Result<SamplingRate, I2C::Error> {
         let value = self.read_byte(Register::odr)?;
-        let value = match value {
-            x if x == SamplingRate::ms5 as u8 => SamplingRate::ms5,
-            x if x == SamplingRate::ms10 as u8 => SamplingRate::ms10,
-            x if x == SamplingRate::ms20 as u8 => SamplingRate::ms20,
-            x if x == SamplingRate::ms40 as u8 => SamplingRate::ms40,
-            x if x == SamplingRate::ms80 as u8 => SamplingRate::ms80,
-            x if x == SamplingRate::ms160 as u8 => SamplingRate::ms160,
-            x if x == SamplingRate::ms320 as u8 => SamplingRate::ms320,
-            x if x == SamplingRate::ms640 as u8 => SamplingRate::ms640,
-            x if x == SamplingRate::ms1_280 as u8 => SamplingRate::ms1_280,
-            x if x == SamplingRate::ms2_560 as u8 => SamplingRate::ms2_560,
-            x if x == SamplingRate::ms5_120 as u8 => SamplingRate::ms5_120,
-            x if x == SamplingRate::ms1_024 as u8 => SamplingRate::ms1_024,
-            x if x == SamplingRate::ms2_048 as u8 => SamplingRate::ms2_048,
-            x if x == SamplingRate::ms4_096 as u8 => SamplingRate::ms4_096,
-            x if x == SamplingRate::ms8_192 as u8 => SamplingRate::ms8_192,
-            x if x == SamplingRate::ms16_384 as u8 => SamplingRate::ms16_384,
-            x if x == SamplingRate::ms32_768 as u8 => SamplingRate::ms32_768,
-            _ => SamplingRate::ms65_536,
-        };
-        Ok(value)
+        let sampling_rate = SamplingRate::from_reg(value);
+
+        Ok(sampling_rate)
     }
 
     /// Returns current filter
     pub fn filter(&mut self) -> Result<Filter, I2C::Error> {
         let config = self.read_byte(Register::config)?;
-        let filter = match config << 1 {
-            x if x == Filter::c0 as u8 => Filter::c0,
-            x if x == Filter::c1 as u8 => Filter::c1,
-            x if x == Filter::c3 as u8 => Filter::c3,
-            x if x == Filter::c7 as u8 => Filter::c7,
-            x if x == Filter::c15 as u8 => Filter::c15,
-            x if x == Filter::c31 as u8 => Filter::c31,
-            x if x == Filter::c63 as u8 => Filter::c63,
-            _ => Filter::c127,
-        };
+        let filter = Filter::from_reg(config);
+
         Ok(filter)
     }
 
     /// Sets filter
     pub fn set_filter(&mut self, new: Filter) -> Result<(), I2C::Error> {
-        let filter = (new as u8) << 1;
-        self.write_byte(Register::config, filter)
+        self.write_byte(Register::config, new.to_reg())
     }
 
     /// Sets oversampling configuration
@@ -392,51 +365,19 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     /// Get oversampling configuration
     pub fn oversampling(&mut self) -> Result<OversamplingConfig, I2C::Error> {
         let value = self.read_byte(Register::osr)?;
-        let osr4_t = match (value & (0b111 << 3)) >> 3 {
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            x if x == Oversampling::x16 as u8 => Oversampling::x16,
-            _ => Oversampling::x32,
-        };
-        let osr_p = match value & 0b111 {
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            x if x == Oversampling::x16 as u8 => Oversampling::x16,
-            _ => Oversampling::x32,
-        };
-        Ok(OversamplingConfig { osr_p, osr4_t })
+        Ok(OversamplingConfig::from_reg(value))
     }
 
     /// Sets interrupt configuration
     pub fn set_interrupt_config(&mut self, new: InterruptConfig) -> Result<(), I2C::Error> {
-        let mode = new.output as u8;
-        let level = (new.active_high as u8) << 1;
-        let latch = (new.latch as u8) << 2;
-        let data_ready = (new.data_ready_interrupt_enable as u8) << 6;
-        self.write_byte(Register::int_ctrl, mode | level | latch | data_ready)
+        self.write_byte(Register::int_ctrl, new.to_reg())
     }
 
     /// Returns current interrupt configuration
     pub fn interrupt_config(&mut self) -> Result<InterruptConfig, I2C::Error> {
         let value = self.read_byte(Register::int_ctrl)?;
-        let mode = match value & 0b1 {
-            0 => OutputMode::PushPull,
-            _ => OutputMode::OpenDrain,
-        };
-        let level = value & (1 << 1) != 0;
-        let latch = value & (1 << 2) != 0;
-        let data_ready = value & (1 << 6) != 0;
 
-        Ok(InterruptConfig {
-            output: mode,
-            active_high: level,
-            latch,
-            data_ready_interrupt_enable: data_ready,
-        })
+        Ok(InterruptConfig::from_reg(value))
     }
 
     ///Get the status register
@@ -513,28 +454,6 @@ impl Status {
     }
 }
 
-/// Interrupt configuration
-#[derive(Debug, Copy, Clone)]
-pub struct InterruptConfig {
-    ///Output mode of interrupt pin
-    pub output: OutputMode,
-    ///Level of interrupt pin
-    pub active_high: bool,
-    ///Latching for interrupt
-    pub latch: bool,
-    ///Data ready interrupt
-    pub data_ready_interrupt_enable: bool,
-}
-
-///Output mode for interrupt pin
-#[derive(Debug, Copy, Clone)]
-pub enum OutputMode {
-    ///Push-pull output mode
-    PushPull = 0,
-    ///Open-drain output mode
-    OpenDrain = 1,
-}
-
 #[derive(Debug, Copy, Clone)]
 ///Sensor data
 pub struct SensorData {
@@ -542,66 +461,6 @@ pub struct SensorData {
     pub pressure: f64,
     /// The measured temperature: Degrees celsius (°C)
     pub temperature: f64,
-}
-
-/// Power Control
-///
-/// Register: `PWR_CTRL`
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct PowerControl {
-    /// Pressure sensor enable
-    pub pressure_enable: bool,
-    /// Temperature sensor enable
-    pub temperature_enable: bool,
-    /// Power mode
-    pub mode: PowerMode,
-}
-
-impl PowerControl {
-    /// Create a new PowerControl with `PowerMode::Normal` and enable both sensors.
-    pub fn normal() -> Self {
-        Self {
-            pressure_enable: true,
-            temperature_enable: true,
-            mode: PowerMode::Normal,
-        }
-    }
-
-    pub(crate) fn from_reg(reg: u8) -> Self {
-        let pressure_enable = (reg & 0b1) != 0;
-        let temperature_enable = (reg & 0b10) != 0;
-        let mode = match reg & (0b11 << 4) >> 4 {
-            x if x == PowerMode::Forced as u8 => PowerMode::Forced,
-            x if x == PowerMode::Normal as u8 => PowerMode::Normal,
-            // in any other case, we assume Sleep as it's the default
-            _ => PowerMode::Sleep,
-        };
-
-        Self {
-            pressure_enable,
-            temperature_enable,
-            mode,
-        }
-    }
-
-    pub(crate) fn to_reg(self) -> u8 {
-        let mode = (self.mode as u8) << 4;
-        let temp_en = (self.temperature_enable as u8) << 1;
-        let press_en = self.pressure_enable as u8;
-
-        mode | temp_en | press_en
-    }
-}
-
-impl Default for PowerControl {
-    /// default value for the register is `0x00`
-    fn default() -> Self {
-        Self {
-            pressure_enable: false,
-            temperature_enable: false,
-            mode: PowerMode::default(),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -625,9 +484,9 @@ mod test {
     fn test_oversampling_config_to_reg_value() {
         let config = OversamplingConfig {
             // bits 0 to 2 - 101
-            osr_p: Oversampling::x32,
+            osr_pressure: Oversampling::x32,
             // bits 3 to 5 - 001
-            osr4_t: Oversampling::x2,
+            osr_temperature: Oversampling::x2,
         };
 
         assert_eq!(0b001101, config.to_reg());
