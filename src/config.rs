@@ -20,6 +20,7 @@ pub(crate) enum Register {
     err = 0x02,
 }
 
+/// Configuration for initial setup of [`BMP388`]
 #[derive(Debug, PartialEq, TypedBuilder)]
 #[builder(doc, field_defaults(default))]
 pub struct Config {
@@ -34,6 +35,12 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a new blocking instance of [`BMP388`]
+    ///
+    /// If a provided configuration value is different than the chip's default
+    /// register value defined in the datasheet it will set it up using the
+    /// I2C bus, returning an error if any of the configuration values
+    /// fails to be set.
     pub fn setup_blocking<I2C, E>(
         &self,
         i2c: I2C,
@@ -48,11 +55,21 @@ impl Config {
             bmp388.set_filter(self.filter)?;
         }
 
-        // TODO: power control
-        // TODO: oversampling
-        // TODO: sampling rate
-        // TODO: interrupt config
-        // TODO: power control
+        if self.power_control != PowerControl::default() {
+            bmp388.set_power_control(self.power_control)?;
+        }
+
+        if self.oversampling != OversamplingConfig::default() {
+            bmp388.set_oversampling(self.oversampling)?;
+        }
+
+        if self.sampling_rate != SamplingRate::default() {
+            bmp388.set_sampling_rate(self.sampling_rate)?;
+        }
+
+        if self.interrupt_config != InterruptConfig::default() {
+            bmp388.set_interrupt_config(self.interrupt_config)?;
+        }
 
         Ok(bmp388)
     }
@@ -68,6 +85,9 @@ pub struct PowerControl {
     /// Temperature sensor enable
     pub temperature_enable: bool,
     /// Power mode
+    ///
+    /// On `PowerMode::Forced`, you need to set the `PowerMode`
+    /// after each sensor values reading.
     pub mode: PowerMode,
 }
 
@@ -81,7 +101,7 @@ impl PowerControl {
         }
     }
 
-    pub(crate) fn from_reg(reg: u8) -> Self {
+    pub fn from_reg(reg: u8) -> Self {
         let pressure_enable = (reg & 0b1) != 0;
         let temperature_enable = (reg & 0b10) != 0;
         let mode = match reg & (0b11 << 4) >> 4 {
@@ -98,7 +118,7 @@ impl PowerControl {
         }
     }
 
-    pub(crate) fn to_reg(self) -> u8 {
+    pub fn to_reg(self) -> u8 {
         let mode = (self.mode as u8) << 4;
         let temp_en = (self.temperature_enable as u8) << 1;
         let press_en = self.pressure_enable as u8;
@@ -121,11 +141,19 @@ impl Default for PowerControl {
 /// Interrupt configuration
 ///
 /// ```
-/// use bmp388::InterruptConfig;
+/// use bmp388::{InterruptConfig, OutputMode};
 ///
 /// let interrupt_config = InterruptConfig::default();
 /// assert_eq!(0x02, interrupt_config.to_reg());
 /// assert_eq!(0b000010, interrupt_config.to_reg());
+///
+/// let default = InterruptConfig {
+///     output: OutputMode::PushPull,
+///     active_high: true,
+///     latch: false,
+///     data_ready_interrupt_enable: false,
+/// };
+/// assert_eq!(default, interrupt_config);
 ///
 /// assert_eq!(InterruptConfig::from_reg(0x02), interrupt_config);
 /// ```
@@ -200,14 +228,14 @@ pub struct OversamplingConfig {
 }
 
 impl OversamplingConfig {
-    pub(crate) fn to_reg(self) -> u8 {
+    pub fn to_reg(self) -> u8 {
         let osr_temperature: u8 = (self.osr_temperature as u8) << 3;
         let osr_pressure: u8 = self.osr_pressure as u8;
 
         osr_temperature | osr_pressure
     }
 
-    pub(crate) fn from_reg(value: u8) -> Self {
+    pub fn from_reg(value: u8) -> Self {
         let osr_temperature = match (value & (0b111 << 3)) >> 3 {
             x if x == Oversampling::x1 as u8 => Oversampling::x1,
             x if x == Oversampling::x2 as u8 => Oversampling::x2,
@@ -455,6 +483,7 @@ pub enum Oversampling {
 
 /// PowerMode
 ///
+///
 /// ```
 /// use bmp388::PowerMode;
 ///
@@ -470,6 +499,8 @@ pub enum PowerMode {
     #[default]
     Sleep = 0b00,
     /// Forced
+    ///
+    /// In `Forced` mode, after each measurement you need to set the `PowerMode` to `Forced` again.
     Forced = 0b01,
     /// Normal
     Normal = 0b11,

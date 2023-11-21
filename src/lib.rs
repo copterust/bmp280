@@ -125,9 +125,9 @@ pub struct BMP388<I2C, M: Mode> {
     phantom: PhantomData<M>,
 }
 
-///
+/// Temperature calibration
 #[derive(Debug, Default, Clone, Copy)]
-pub struct TemperatureCalibration {
+struct TemperatureCalibration {
     dig_t1: u16,
     dig_t2: u16,
     dig_t3: i8,
@@ -142,7 +142,7 @@ impl TemperatureCalibration {
     }
 }
 
-///
+/// Pressure calibration
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PressureCalibration {
     dig_p1: i16,
