@@ -1,12 +1,9 @@
 use super::*;
 
-use embedded_hal_async as ehal_async;
-
-impl<I2C: ehal_async::i2c::I2c> BMP388<I2C, Async> {
+impl<I2C: embedded_hal_async::i2c::I2c> BMP388<I2C, Async> {
     /// Creates new BMP388 driver
     ///
     /// The Delay is used to correctly wait for the calibration data after resetting the chip.
-    #[cfg(feature = "nightly")]
     pub async fn new<E>(
         i2c: I2C,
         addr: u8,

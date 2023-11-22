@@ -16,7 +16,7 @@ rust-version = "1.65"
 [features]
 default = []
 
-nightly = ["embedded-hal-async"]
+nightly = ["dep:embedded-hal-async"]
 
 [dependencies]
 embedded-hal = "0.2"

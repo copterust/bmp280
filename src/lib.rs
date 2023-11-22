@@ -1,6 +1,6 @@
 //! A platform agnostic driver to interface with the BMP388 (pressure sensor)
 //!
-//! This driver is built using [`embedded-hal`] traits.
+//! This driver is built using [`embedded-hal`](docs.rs/embedded-hal) traits.
 //!
 //! # Examples
 //!
