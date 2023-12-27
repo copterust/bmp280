@@ -459,6 +459,8 @@ impl Status {
 /// Sensor data
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// Sensor data
 pub struct SensorData {
     ///The measured pressure: Pascals (Pa)
     pub pressure: f64,
