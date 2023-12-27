@@ -16,10 +16,13 @@ rust-version = "1.62"
 [features]
 default = []
 
-nightly = ["embedded-hal-async"]
+nightly = ["dep:embedded-hal-async"]
+defmt-03 = ["dep:defmt"]
 
 [dependencies]
 embedded-hal = "0.2"
 embedded-hal-async = { version = "1.0.0-rc.3", optional = true }
+
+defmt = { version = "0.3", optional = true }
 
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }

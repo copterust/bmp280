@@ -529,6 +529,7 @@ pub enum OutputMode {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 ///Sensor data
 pub struct SensorData {
     ///The measured pressure
