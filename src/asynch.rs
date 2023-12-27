@@ -7,7 +7,7 @@ impl<I2C: embedded_hal_async::i2c::I2c> BMP388<I2C, Async> {
     pub async fn new<E>(
         i2c: I2C,
         addr: u8,
-        delay: &mut impl embedded_hal_async::delay::DelayUs,
+        delay: &mut impl embedded_hal_async::delay::DelayNs,
     ) -> Result<BMP388<I2C, Async>, E>
     where
         I2C: embedded_hal_async::i2c::I2c<embedded_hal_async::i2c::SevenBitAddress, Error = E>,
@@ -120,49 +120,22 @@ impl<I2C: embedded_hal_async::i2c::I2c> BMP388<I2C, Async> {
     /// Returns current sampling rate
     pub async fn sampling_rate(&mut self) -> Result<SamplingRate, I2C::Error> {
         let value = self.read_byte(Register::odr).await?;
-        let value = match value {
-            x if x == SamplingRate::ms5 as u8 => SamplingRate::ms5,
-            x if x == SamplingRate::ms10 as u8 => SamplingRate::ms10,
-            x if x == SamplingRate::ms20 as u8 => SamplingRate::ms20,
-            x if x == SamplingRate::ms40 as u8 => SamplingRate::ms40,
-            x if x == SamplingRate::ms80 as u8 => SamplingRate::ms80,
-            x if x == SamplingRate::ms160 as u8 => SamplingRate::ms160,
-            x if x == SamplingRate::ms320 as u8 => SamplingRate::ms320,
-            x if x == SamplingRate::ms640 as u8 => SamplingRate::ms640,
-            x if x == SamplingRate::ms1_280 as u8 => SamplingRate::ms1_280,
-            x if x == SamplingRate::ms2_560 as u8 => SamplingRate::ms2_560,
-            x if x == SamplingRate::ms5_120 as u8 => SamplingRate::ms5_120,
-            x if x == SamplingRate::ms1_024 as u8 => SamplingRate::ms1_024,
-            x if x == SamplingRate::ms2_048 as u8 => SamplingRate::ms2_048,
-            x if x == SamplingRate::ms4_096 as u8 => SamplingRate::ms4_096,
-            x if x == SamplingRate::ms8_192 as u8 => SamplingRate::ms8_192,
-            x if x == SamplingRate::ms16_384 as u8 => SamplingRate::ms16_384,
-            x if x == SamplingRate::ms32_768 as u8 => SamplingRate::ms32_768,
-            _ => SamplingRate::ms65_536,
-        };
-        Ok(value)
+        let sampling_rate = SamplingRate::from_reg(value);
+
+        Ok(sampling_rate)
     }
 
     /// Returns current filter
     pub async fn filter(&mut self) -> Result<Filter, I2C::Error> {
         let config = self.read_byte(Register::config).await?;
-        let filter = match config << 1 {
-            x if x == Filter::c0 as u8 => Filter::c0,
-            x if x == Filter::c1 as u8 => Filter::c1,
-            x if x == Filter::c3 as u8 => Filter::c3,
-            x if x == Filter::c7 as u8 => Filter::c7,
-            x if x == Filter::c15 as u8 => Filter::c15,
-            x if x == Filter::c31 as u8 => Filter::c31,
-            x if x == Filter::c63 as u8 => Filter::c63,
-            _ => Filter::c127,
-        };
+        let filter = Filter::from_reg(config);
+
         Ok(filter)
     }
 
     /// Sets filter
     pub async fn set_filter(&mut self, new: Filter) -> Result<(), I2C::Error> {
-        let filter = (new as u8) << 1;
-        self.write_byte(Register::config, filter).await
+        self.write_byte(Register::config, new.to_reg()).await
     }
 
     /// Sets oversampling configuration
@@ -173,52 +146,19 @@ impl<I2C: embedded_hal_async::i2c::I2c> BMP388<I2C, Async> {
     /// Get oversampling configuration
     pub async fn oversampling(&mut self) -> Result<OversamplingConfig, I2C::Error> {
         let value = self.read_byte(Register::osr).await?;
-        let osr4_t = match (value & (0b111 << 3)) >> 3 {
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            x if x == Oversampling::x16 as u8 => Oversampling::x16,
-            _ => Oversampling::x32,
-        };
-        let osr_p = match value & 0b111 {
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            x if x == Oversampling::x16 as u8 => Oversampling::x16,
-            _ => Oversampling::x32,
-        };
-        Ok(OversamplingConfig { osr_p, osr4_t })
+        Ok(OversamplingConfig::from_reg(value))
     }
 
     /// Sets interrupt configuration
     pub async fn set_interrupt_config(&mut self, new: InterruptConfig) -> Result<(), I2C::Error> {
-        let mode = new.output as u8;
-        let level = (new.active_high as u8) << 1;
-        let latch = (new.latch as u8) << 2;
-        let data_ready = (new.data_ready_interrupt_enable as u8) << 6;
-        self.write_byte(Register::int_ctrl, mode | level | latch | data_ready)
-            .await
+        self.write_byte(Register::int_ctrl, new.to_reg()).await
     }
 
     /// Returns current interrupt configuration
     pub async fn interrupt_config(&mut self) -> Result<InterruptConfig, I2C::Error> {
         let value = self.read_byte(Register::int_ctrl).await?;
-        let mode = match value & 0b1 {
-            0 => OutputMode::PushPull,
-            _ => OutputMode::OpenDrain,
-        };
-        let level = value & (1 << 1) != 0;
-        let latch = value & (1 << 2) != 0;
-        let data_ready = value & (1 << 6) != 0;
 
-        Ok(InterruptConfig {
-            output: mode,
-            active_high: level,
-            latch,
-            data_ready_interrupt_enable: data_ready,
-        })
+        Ok(InterruptConfig::from_reg(value))
     }
 
     /// Get the status register
