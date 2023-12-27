@@ -17,10 +17,11 @@ rust-version = "1.65"
 default = []
 
 nightly = ["dep:embedded-hal-async"]
+config-builder = ["dep:typed-builder"]
 
 [dependencies]
 embedded-hal = "0.2"
 embedded-hal-async = { version = "1.0.0-rc.3", optional = true }
 
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
-typed-builder = "0.18"
+typed-builder = { version = "0.18", optional = true }
