@@ -424,7 +424,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     }
 }
 
-///Error
+/// Error
 pub struct Error {
     ///Fatal error
     pub fatal: bool,
@@ -434,7 +434,7 @@ pub struct Error {
     pub config: bool,
 }
 
-///Status
+/// Status
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Status {
     ///Indicates whether chip is ready for a command
@@ -456,8 +456,9 @@ impl Status {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
 /// Sensor data
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 pub struct SensorData {
     ///The measured pressure: Pascals (Pa)
     pub pressure: f64,
@@ -527,7 +528,8 @@ impl Default for PowerControl {
         }
     }
 }
-///Output mode for interrupt pin
+
+/// Output mode for interrupt pin
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OutputMode {
     ///Push-pull output mode
