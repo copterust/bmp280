@@ -25,11 +25,11 @@
 // #![deny(warnings)]
 #![no_std]
 #![cfg_attr(
-    feature = "nightly",
+    all(nightly, feature = "asynch"),
     feature(async_fn_in_trait, impl_trait_projections)
 )]
 #![cfg_attr(
-    feature = "nightly",
+    all(feature = "asynch", nightly),
     allow(stable_features, unknown_lints, async_fn_in_trait)
 )]
 
@@ -43,7 +43,7 @@ use num_traits::Pow;
 pub use config::{Config, ConfigBuilder};
 use config::{InterruptConfig, OversamplingConfig, Register};
 
-#[cfg(feature = "nightly")]
+#[cfg(feature = "asynch")]
 mod asynch;
 
 pub mod config;
@@ -77,6 +77,7 @@ pub enum Addr {
 const STANDARD_SEA_LEVEL_PRESSURE: f64 = 101325.0;
 
 /// Async bus mode
+#[cfg(feature = "asynch")]
 pub struct Async;
 /// Blocking bus mode
 pub struct Blocking;
@@ -84,7 +85,9 @@ pub struct Blocking;
 /// Bus mode
 pub trait Mode: sealed::Mode {}
 
+#[cfg(feature = "asynch")]
 impl Mode for Async {}
+#[cfg(feature = "asynch")]
 impl sealed::Mode for Async {}
 impl Mode for Blocking {}
 impl sealed::Mode for Blocking {}
@@ -224,17 +227,17 @@ impl<I2C, M: Mode> BMP388<I2C, M> {
     }
 }
 
-impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
+impl<I2C: ehal::i2c::I2c> BMP388<I2C, Blocking> {
     /// Creates new BMP388 driver
     ///
     /// The Delay is used to correctly wait for the calibration data after resetting the chip.
     pub fn new_blocking<E>(
         i2c: I2C,
         addr: u8,
-        delay: &mut impl ehal::blocking::delay::DelayMs<u8>,
+        delay: &mut impl ehal::delay::DelayNs,
     ) -> Result<BMP388<I2C, Blocking>, E>
     where
-        I2C: ehal::blocking::i2c::WriteRead<Error = E>,
+        I2C: ehal::i2c::I2c<ehal::i2c::SevenBitAddress, Error = E>,
     {
         let mut chip = BMP388 {
             com: i2c,
