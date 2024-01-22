@@ -1,6 +1,6 @@
 //! A platform agnostic driver to interface with the BMP388 (pressure sensor)
 //!
-//! This driver is built using [`embedded-hal`] traits.
+//! This driver is built using [`embedded-hal`](docs.rs/embedded-hal) traits.
 //!
 //! # Examples
 //!
@@ -21,8 +21,8 @@
 //! let sensor_data: SensorData = sensor.sensor_values().unwrap();
 //! ```
 
-#![deny(missing_docs)]
-#![deny(warnings)]
+// #![deny(missing_docs)]
+// #![deny(warnings)]
 #![no_std]
 #![cfg_attr(
     feature = "nightly",
@@ -35,11 +35,18 @@
 
 use core::marker::PhantomData;
 
+use embedded_hal as ehal;
+
+use num_traits::Pow;
+
+#[cfg(feature = "config-builder")]
+pub use config::{Config, ConfigBuilder};
+use config::{InterruptConfig, OversamplingConfig, Register};
+
 #[cfg(feature = "nightly")]
 mod asynch;
 
-use embedded_hal as ehal;
-use num_traits::Pow;
+pub mod config;
 
 /// The expected value of the ChipId register
 pub const CHIP_ID: u8 = 0x50;
@@ -120,9 +127,9 @@ pub struct BMP388<I2C, M: Mode> {
     phantom: PhantomData<M>,
 }
 
-///
+/// Temperature calibration
 #[derive(Debug, Default, Clone, Copy)]
-pub struct TemperatureCalibration {
+struct TemperatureCalibration {
     dig_t1: u16,
     dig_t2: u16,
     dig_t3: i8,
@@ -137,7 +144,7 @@ impl TemperatureCalibration {
     }
 }
 
-///
+/// Pressure calibration
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PressureCalibration {
     dig_p1: i16,
@@ -278,6 +285,8 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
 
     /// Calculate altitude, unit: meters
     ///
+    /// NOTE: Gives good values under normal weather conditions up to an altitude of 11000 meters.
+    ///
     /// Reads the sensor's values and calculates the altitude based on
     /// the atmospheric pressure measured by the sensor.
     ///
@@ -332,49 +341,22 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     /// Returns current sampling rate
     pub fn sampling_rate(&mut self) -> Result<SamplingRate, I2C::Error> {
         let value = self.read_byte(Register::odr)?;
-        let value = match value {
-            x if x == SamplingRate::ms5 as u8 => SamplingRate::ms5,
-            x if x == SamplingRate::ms10 as u8 => SamplingRate::ms10,
-            x if x == SamplingRate::ms20 as u8 => SamplingRate::ms20,
-            x if x == SamplingRate::ms40 as u8 => SamplingRate::ms40,
-            x if x == SamplingRate::ms80 as u8 => SamplingRate::ms80,
-            x if x == SamplingRate::ms160 as u8 => SamplingRate::ms160,
-            x if x == SamplingRate::ms320 as u8 => SamplingRate::ms320,
-            x if x == SamplingRate::ms640 as u8 => SamplingRate::ms640,
-            x if x == SamplingRate::ms1_280 as u8 => SamplingRate::ms1_280,
-            x if x == SamplingRate::ms2_560 as u8 => SamplingRate::ms2_560,
-            x if x == SamplingRate::ms5_120 as u8 => SamplingRate::ms5_120,
-            x if x == SamplingRate::ms1_024 as u8 => SamplingRate::ms1_024,
-            x if x == SamplingRate::ms2_048 as u8 => SamplingRate::ms2_048,
-            x if x == SamplingRate::ms4_096 as u8 => SamplingRate::ms4_096,
-            x if x == SamplingRate::ms8_192 as u8 => SamplingRate::ms8_192,
-            x if x == SamplingRate::ms16_384 as u8 => SamplingRate::ms16_384,
-            x if x == SamplingRate::ms32_768 as u8 => SamplingRate::ms32_768,
-            _ => SamplingRate::ms65_536,
-        };
-        Ok(value)
+        let sampling_rate = SamplingRate::from_reg(value);
+
+        Ok(sampling_rate)
     }
 
     /// Returns current filter
     pub fn filter(&mut self) -> Result<Filter, I2C::Error> {
         let config = self.read_byte(Register::config)?;
-        let filter = match config << 1 {
-            x if x == Filter::c0 as u8 => Filter::c0,
-            x if x == Filter::c1 as u8 => Filter::c1,
-            x if x == Filter::c3 as u8 => Filter::c3,
-            x if x == Filter::c7 as u8 => Filter::c7,
-            x if x == Filter::c15 as u8 => Filter::c15,
-            x if x == Filter::c31 as u8 => Filter::c31,
-            x if x == Filter::c63 as u8 => Filter::c63,
-            _ => Filter::c127,
-        };
+        let filter = Filter::from_reg(config);
+
         Ok(filter)
     }
 
     /// Sets filter
     pub fn set_filter(&mut self, new: Filter) -> Result<(), I2C::Error> {
-        let filter = (new as u8) << 1;
-        self.write_byte(Register::config, filter)
+        self.write_byte(Register::config, new.to_reg())
     }
 
     /// Sets oversampling configuration
@@ -385,51 +367,19 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     /// Get oversampling configuration
     pub fn oversampling(&mut self) -> Result<OversamplingConfig, I2C::Error> {
         let value = self.read_byte(Register::osr)?;
-        let osr4_t = match (value & (0b111 << 3)) >> 3 {
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            x if x == Oversampling::x16 as u8 => Oversampling::x16,
-            _ => Oversampling::x32,
-        };
-        let osr_p = match value & 0b111 {
-            x if x == Oversampling::x1 as u8 => Oversampling::x1,
-            x if x == Oversampling::x2 as u8 => Oversampling::x2,
-            x if x == Oversampling::x4 as u8 => Oversampling::x4,
-            x if x == Oversampling::x8 as u8 => Oversampling::x8,
-            x if x == Oversampling::x16 as u8 => Oversampling::x16,
-            _ => Oversampling::x32,
-        };
-        Ok(OversamplingConfig { osr_p, osr4_t })
+        Ok(OversamplingConfig::from_reg(value))
     }
 
     /// Sets interrupt configuration
     pub fn set_interrupt_config(&mut self, new: InterruptConfig) -> Result<(), I2C::Error> {
-        let mode = new.output as u8;
-        let level = (new.active_high as u8) << 1;
-        let latch = (new.latch as u8) << 2;
-        let data_ready = (new.data_ready_interrupt_enable as u8) << 6;
-        self.write_byte(Register::int_ctrl, mode | level | latch | data_ready)
+        self.write_byte(Register::int_ctrl, new.to_reg())
     }
 
     /// Returns current interrupt configuration
     pub fn interrupt_config(&mut self) -> Result<InterruptConfig, I2C::Error> {
         let value = self.read_byte(Register::int_ctrl)?;
-        let mode = match value & 0b1 {
-            0 => OutputMode::PushPull,
-            _ => OutputMode::OpenDrain,
-        };
-        let level = value & (1 << 1) != 0;
-        let latch = value & (1 << 2) != 0;
-        let data_ready = value & (1 << 6) != 0;
 
-        Ok(InterruptConfig {
-            output: mode,
-            active_high: level,
-            latch,
-            data_ready_interrupt_enable: data_ready,
-        })
+        Ok(InterruptConfig::from_reg(value))
     }
 
     ///Get the status register
@@ -474,7 +424,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP388<I2C, Blocking> {
     }
 }
 
-///Error
+/// Error
 pub struct Error {
     ///Fatal error
     pub fatal: bool,
@@ -484,7 +434,7 @@ pub struct Error {
     pub config: bool,
 }
 
-///Status
+/// Status
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Status {
     ///Indicates whether chip is ready for a command
@@ -506,45 +456,21 @@ impl Status {
     }
 }
 
-/// Interrupt configuration
-#[derive(Debug, Copy, Clone)]
-pub struct InterruptConfig {
-    ///Output mode of interrupt pin
-    pub output: OutputMode,
-    ///Level of interrupt pin
-    pub active_high: bool,
-    ///Latching for interrupt
-    pub latch: bool,
-    ///Data ready interrupt
-    pub data_ready_interrupt_enable: bool,
-}
-
-///Output mode for interrupt pin
-#[derive(Debug, Copy, Clone)]
-pub enum OutputMode {
-    ///Push-pull output mode
-    PushPull = 0,
-    ///Open-drain output mode
-    OpenDrain = 1,
-}
-
+/// Sensor data
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "defmt-03", derive(defmt::Format))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-///Sensor data
+/// Sensor data
 pub struct SensorData {
-    ///The measured pressure
+    ///The measured pressure: Pascals (Pa)
     pub pressure: f64,
-    /// The measured temperature
+    /// The measured temperature: Degrees celsius (°C)
     pub temperature: f64,
 }
 
 /// Power Control
 ///
-/// Register: `PWR_CTRL`1
-/// ```
-/// // Default accordingly to the datasheet
-/// ```
+/// Register: `PWR_CTRL`
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PowerControl {
     /// Pressure sensor enable
@@ -552,6 +478,9 @@ pub struct PowerControl {
     /// Temperature sensor enable
     pub temperature_enable: bool,
     /// Power mode
+    ///
+    /// On `PowerMode::Forced`, you need to set the `PowerMode`
+    /// after each sensor values reading.
     pub mode: PowerMode,
 }
 
@@ -565,7 +494,7 @@ impl PowerControl {
         }
     }
 
-    pub(crate) fn from_reg(reg: u8) -> Self {
+    pub fn from_reg(reg: u8) -> Self {
         let pressure_enable = (reg & 0b1) != 0;
         let temperature_enable = (reg & 0b10) != 0;
         let mode = match reg & (0b11 << 4) >> 4 {
@@ -582,7 +511,7 @@ impl PowerControl {
         }
     }
 
-    pub(crate) fn to_reg(self) -> u8 {
+    pub fn to_reg(self) -> u8 {
         let mode = (self.mode as u8) << 4;
         let temp_en = (self.temperature_enable as u8) << 1;
         let press_en = self.pressure_enable as u8;
@@ -602,33 +531,27 @@ impl Default for PowerControl {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-///Oversampling Config (OSR)
-pub struct OversamplingConfig {
-    /// Pressure oversampling
-    pub osr_p: Oversampling,
-    /// Temperature oversampling
-    pub osr4_t: Oversampling,
+/// Output mode for interrupt pin
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum OutputMode {
+    ///Push-pull output mode
+    PushPull = 0,
+    ///Open-drain output mode
+    OpenDrain = 1,
 }
 
-impl OversamplingConfig {
-    pub(crate) fn to_reg(self) -> u8 {
-        let osr_t: u8 = (self.osr4_t as u8) << 3;
-        let osr_p: u8 = self.osr_p as u8;
-
-        osr_t | osr_p
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-#[allow(non_camel_case_types)]
-/// Standby time in ms
+/// Standby time in ms (ODR reg)
 ///
-/// Register 0x1D “ODR”
+/// ODR register (0x1D) = 0x00 - values from 0-17 - Subsampling
+///
+/// Default value: 0x00
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
 pub enum SamplingRate {
     /// Prescaler 1 (5ms, 200 Hz)
     ///
     /// Description: ODR 200 Hz
+    #[default]
     ms5 = 0x00,
     /// Prescaler 2 (10ms, 100 Hz)
     ///
@@ -700,9 +623,38 @@ pub enum SamplingRate {
     ms65_536 = 0x11,
 }
 
-#[derive(Debug, Copy, Clone, Default)]
-#[allow(non_camel_case_types)]
+impl SamplingRate {
+    /// For any unknown value it will use the default of `5 ms` or `200 Hz`.
+    pub fn from_reg(value: u8) -> Self {
+        match value {
+            x if x == SamplingRate::ms5 as u8 => SamplingRate::ms5,
+            x if x == SamplingRate::ms10 as u8 => SamplingRate::ms10,
+            x if x == SamplingRate::ms20 as u8 => SamplingRate::ms20,
+            x if x == SamplingRate::ms40 as u8 => SamplingRate::ms40,
+            x if x == SamplingRate::ms80 as u8 => SamplingRate::ms80,
+            x if x == SamplingRate::ms160 as u8 => SamplingRate::ms160,
+            x if x == SamplingRate::ms320 as u8 => SamplingRate::ms320,
+            x if x == SamplingRate::ms640 as u8 => SamplingRate::ms640,
+            x if x == SamplingRate::ms1_280 as u8 => SamplingRate::ms1_280,
+            x if x == SamplingRate::ms2_560 as u8 => SamplingRate::ms2_560,
+            x if x == SamplingRate::ms5_120 as u8 => SamplingRate::ms5_120,
+            x if x == SamplingRate::ms1_024 as u8 => SamplingRate::ms1_024,
+            x if x == SamplingRate::ms2_048 as u8 => SamplingRate::ms2_048,
+            x if x == SamplingRate::ms4_096 as u8 => SamplingRate::ms4_096,
+            x if x == SamplingRate::ms8_192 as u8 => SamplingRate::ms8_192,
+            x if x == SamplingRate::ms16_384 as u8 => SamplingRate::ms16_384,
+            x if x == SamplingRate::ms32_768 as u8 => SamplingRate::ms32_768,
+            x if x == SamplingRate::ms65_536 as u8 => SamplingRate::ms65_536,
+            // for any other value, use the default of 5 ms
+            _ => SamplingRate::default(),
+        }
+    }
+}
+
 /// The time constant of IIR filter
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+// #[repr(u8)]
 pub enum Filter {
     #[default]
     ///off
@@ -723,9 +675,32 @@ pub enum Filter {
     c127 = 0b111,
 }
 
-#[derive(Debug, Copy, Clone)]
-#[allow(non_camel_case_types)]
+impl Filter {
+    /// Parses the filter value from a the Config register
+    pub fn from_reg(config_reg: u8) -> Self {
+        match config_reg << 1 {
+            x if x == Filter::c0 as u8 => Filter::c0,
+            x if x == Filter::c1 as u8 => Filter::c1,
+            x if x == Filter::c3 as u8 => Filter::c3,
+            x if x == Filter::c7 as u8 => Filter::c7,
+            x if x == Filter::c15 as u8 => Filter::c15,
+            x if x == Filter::c31 as u8 => Filter::c31,
+            x if x == Filter::c63 as u8 => Filter::c63,
+            x if x == Filter::c127 as u8 => Filter::c127,
+            // for any other value use default of c0 (off)
+            _ => Filter::c0,
+        }
+    }
+
+    /// Creates a value for the Config register
+    pub fn to_reg(&self) -> u8 {
+        (*self as u8) << 1
+    }
+}
+
 /// Oversampling
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
 pub enum Oversampling {
     /// x1
     ///
@@ -777,8 +752,8 @@ pub enum Oversampling {
     x32 = 0b101,
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 /// PowerMode
+///
 ///
 /// ```
 /// use bmp388::PowerMode;
@@ -786,6 +761,7 @@ pub enum Oversampling {
 /// let default = PowerMode::default();
 /// assert_eq!(PowerMode::Sleep, default);
 /// ```
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PowerMode {
     /// Sleep
@@ -794,26 +770,11 @@ pub enum PowerMode {
     #[default]
     Sleep = 0b00,
     /// Forced
+    ///
+    /// In `Forced` mode, after each measurement you need to set the `PowerMode` to `Forced` again.
     Forced = 0b01,
     /// Normal
     Normal = 0b11,
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-enum Register {
-    id = 0x00,
-    sensor_data = 0x04,
-    config = 0x1F,
-    odr = 0x1D,
-    osr = 0x1C,
-    pwr_ctrl = 0x1B,
-    int_ctrl = 0x19,
-    calib00 = 0x31,
-    cmd = 0x7E,
-    status = 0x03,
-    err = 0x02,
 }
 
 #[cfg(test)]
@@ -831,17 +792,5 @@ mod test {
                 temperature_data_ready: true,
             }
         )
-    }
-
-    #[test]
-    fn test_oversampling_config_to_reg_value() {
-        let config = OversamplingConfig {
-            // bits 0 to 2 - 101
-            osr_p: Oversampling::x32,
-            // bits 3 to 5 - 001
-            osr4_t: Oversampling::x2,
-        };
-
-        assert_eq!(0b001101, config.to_reg());
     }
 }

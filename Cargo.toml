@@ -11,14 +11,16 @@ version = "0.1.0"
 readme = "README.md"
 edition = "2021"
 
-rust-version = "1.62"
+rust-version = "1.65"
 
 [features]
 default = []
 
-nightly = ["dep:embedded-hal-async"]
 defmt-03 = ["dep:defmt"]
 serde = ["dep:serde"]
+
+nightly = ["dep:embedded-hal-async"]
+config-builder = ["dep:typed-builder"]
 
 [dependencies]
 embedded-hal = "0.2"
@@ -28,3 +30,5 @@ defmt = { version = "0.3", optional = true }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
+
+typed-builder = { version = "0.18", optional = true }
