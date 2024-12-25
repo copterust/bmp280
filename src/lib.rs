@@ -68,7 +68,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
     /// Create a new BMP280 driver with the default address
     pub fn new<E>(i2c: I2C) -> Result<BMP280<I2C>, E>
     where
-        I2C: ehal::blocking::i2c::WriteRead<Error = E>
+        I2C: ehal::blocking::i2c::WriteRead<Error = E>,
     {
         Self::new_with_address(i2c, DEFAULT_ADDRESS)
     }
@@ -151,6 +151,18 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
         (v1 + v2) / 5120.0
     }
 
+    /// Reads and returns temperature and resets control
+    pub fn temp_one_shot(&mut self) -> f64 {
+        let temp = self.temp();
+        self.set_control(Control {
+            osrs_t: Oversampling::x2,
+            osrs_p: Oversampling::x16,
+            mode: PowerMode::Forced,
+        });
+
+        temp
+    }
+
     /// Returns current config
     pub fn config(&mut self) -> Config {
         let config = self.read_byte(Register::config);
@@ -173,10 +185,7 @@ impl<I2C: ehal::blocking::i2c::WriteRead> BMP280<I2C> {
             x if x == Filter::c16 as u8 => Filter::c16,
             _ => Filter::unknown,
         };
-        Config {
-            t_sb,
-            filter,
-        }
+        Config { t_sb, filter }
     }
 
     /// Sets configuration
